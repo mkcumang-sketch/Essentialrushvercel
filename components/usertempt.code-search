@@ -1,0 +1,79 @@
+# Query: usertempt
+# ContextLines: 1
+
+15 results - 15 files
+
+next-client\app\api\analytics\route.ts:
+  10  import Lead from '@/models/Lead';
+  11: import User from '@/models/usertemp';
+  12  import ActivityLog from '@/models/ActivityLog';
+
+next-client\app\api\auth\forgot-password\route.ts:
+  2  import connectDB from '@/lib/mongodb';
+  3: import User from '@/models/usertemp'; // Apne user model ka path check kar lena
+  4  import { sendEmail } from '@/lib/mail';
+
+next-client\app\api\auth\register\route.ts:
+  6  import bcrypt from 'bcryptjs';
+  7: import User from '@/models/usertemp';
+  8  import { z } from 'zod';
+
+next-client\app\api\auth\reset-password\route.ts:
+  2  import connectDB from '@/lib/mongodb';
+  3: import User from '@/models/usertemp';
+  4  import bcrypt from 'bcryptjs';
+
+next-client\app\api\checkout\capture\route.ts:
+  8  import { authOptions } from '@/lib/auth';
+  9: import User from "@/models/usertemp";
+  10  import mongoose from "mongoose"; // 🚀 FIX: mongoose import kiya
+
+next-client\app\api\customers\route.ts:
+  4  import { authOptions } from '@/lib/auth';
+  5: import User from '@/models/usertemp';
+  6  import { revalidatePath } from 'next/cache';
+
+next-client\app\api\email\invoice\route.ts:
+  3  import { Order } from '@/models/Order';
+  4: import User from '@/models/usertemp';
+  5  import nodemailer from 'nodemailer';
+
+next-client\app\api\user\addresses\route.ts:
+  2  import connectDB from '@/lib/mongodb';
+  3: import User from '@/models/usertemp'; // ⚠️ Apna sahi model name check kar lena
+  4  import { getServerSession } from "next-auth/next";
+
+next-client\app\api\user\apply-referral\route.ts:
+  4  import  connectDB from "@/lib/mongodb";
+  5: import User from "@/models/usertemp";
+  6  
+
+next-client\app\api\user\referral\apply\route.ts:
+   9  // 🚀 FIX 1: Reverted to Default Import (Solves the red line on import)
+  10: import User from '@/models/usertemp'; 
+  11  
+
+next-client\app\api\user\update-phone\route.ts:
+  6  import { authOptions } from '@/lib/auth';
+  7: import User from "@/models/usertemp";
+  8  import mongoose from "mongoose";
+
+next-client\app\api\user\wishlist\route.ts:
+  2  import connectDB from '@/lib/mongodb';
+  3: import User from '@/models/usertemp'; // ⚠️ Apna sahi model name check kar lena
+  4  import { getServerSession } from "next-auth/next";
+
+next-client\app\api\verify-payment\route.ts:
+  6  import { Order } from '@/models/Order';
+  7: import User from '@/models/usertemp';
+  8  import { Agent } from '@/models/Agent';
+
+next-client\app\api\verify-promo\route.ts:
+  5  import connectDB from '@/lib/mongodb';
+  6: import User from '@/models/usertemp';
+  7  import { getServerSession } from "next-auth";
+
+next-client\lib\fraud.ts:
+  2  import mongoose from "mongoose";
+  3: import User from "@/models/usertemptab"; 
+  4  import { Order } from "@/models/Order";
