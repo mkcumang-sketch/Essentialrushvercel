@@ -1,47 +1,77 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
-import User from '@/models/usertemp'; // Apne user model ka path check kar lena
+import User from '@/models/usertemp';
 import { sendEmail } from '@/lib/mail';
 
 export async function POST(req: Request) {
-    try {
-        const { email } = await req.json();
-        await connectDB();
+  try {
+    const { email } = await req.json();
 
-        const user = await User.findOne({ email });
-        if (!user) {
-            return NextResponse.json({ success: false, message: "User not found" }, { status: 404 });
-        }
-
-        // 1. 6-digit ka random OTP generate karo
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        
-        // 2. OTP aur Expiry (10 mins) Database mein save karo
-        user.resetOtp = otp;
-        user.otpExpiry = new Date(Date.now() + 10 * 60 * 1000); 
-        await user.save();
-
-        // 3. Premium look wala HTML Email template
-        const emailHtml = `
-            <div style="font-family: Arial, sans-serif; text-align: center; padding: 40px 20px; background-color: #0A0A0A; color: #ffffff;">
-                <h2 style="color: #D4AF37; font-style: italic;">Essential Rush</h2>
-                <p style="color: #cccccc;">We received a request to reset your Vault password.</p>
-                <div style="margin: 30px auto; padding: 20px; border: 1px solid #D4AF37; display: inline-block; border-radius: 10px;">
-                    <p style="margin: 0; color: #888888; font-size: 12px; text-transform: uppercase; letter-spacing: 2px;">Your OTP Code</p>
-                    <h1 style="color: #D4AF37; font-size: 48px; margin: 10px 0; letter-spacing: 8px;">${otp}</h1>
-                </div>
-                <p style="color: #888888; font-size: 12px;">This code is valid for exactly 10 minutes.</p>
-                <p style="color: #888888; font-size: 12px;">If you didn't request this, please ignore this email securely.</p>
-            </div>
-        `;
-        
-        // 4. Email Send kar do
-        await sendEmail(email, "Password Reset Vault Access - Essential Rush", emailHtml);
-
-        return NextResponse.json({ success: true, message: "OTP sent to your email" });
-
-    } catch (error) {
-        console.error("Forgot Password Error:", error);
-        return NextResponse.json({ success: false, message: "Server Error" }, { status: 500 });
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+      return NextResponse.json(
+        { success: false, message: 'Please provide a valid email address.' },
+        { status: 400 }
+      );
     }
+
+    await connectDB();
+
+    const cleanEmail = email.trim().toLowerCase();
+    const user = (await User.findOne({ email: cleanEmail })) as any;
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, message: 'No account found with this email.' },
+        { status: 404 }
+      );
+    }
+
+    // 1. Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // 2. Direct atomic update in MongoDB
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          resetOtp: otp,
+          otpExpiry: otpExpiry,
+        },
+      }
+    );
+
+    // 3. Luxury HTML Email Template
+    const emailHtml = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; text-align: center; padding: 40px 20px; background-color: #0A0A0A; color: #ffffff; border-radius: 16px;">
+        <h2 style="color: #D4AF37; font-family: Georgia, serif; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px;">Essential Rush</h2>
+        <p style="color: #a3a3a3; font-size: 14px; margin-top: 0;">Vault Password Recovery</p>
+        
+        <div style="margin: 32px auto; padding: 24px; border: 1px solid rgba(212, 175, 55, 0.4); display: inline-block; border-radius: 12px; background: rgba(212, 175, 55, 0.03);">
+          <p style="margin: 0; color: #888888; font-size: 11px; text-transform: uppercase; letter-spacing: 3px; font-weight: bold;">One-Time Security Passcode</p>
+          <h1 style="color: #D4AF37; font-size: 44px; margin: 12px 0; letter-spacing: 8px; font-family: monospace;">${otp}</h1>
+          <p style="margin: 0; color: #666666; font-size: 11px;">Expires in 10 minutes</p>
+        </div>
+        
+        <p style="color: #737373; font-size: 12px; max-width: 360px; margin: 0 auto; line-height: 1.6;">
+          If you did not initiate this request, your account remains secure. No action is required.
+        </p>
+      </div>
+    `;
+
+    // 4. Send Email via Mailer Service
+    await sendEmail(cleanEmail, "Password Reset Vault Access - Essential Rush", emailHtml);
+
+    return NextResponse.json({
+      success: true,
+      message: 'OTP has been dispatched to your email.',
+    });
+
+  } catch (error: any) {
+    console.error("Forgot Password Error:", error);
+    return NextResponse.json(
+      { success: false, message: error?.message || 'Server error processing reset request.' },
+      { status: 500 }
+    );
+  }
 }

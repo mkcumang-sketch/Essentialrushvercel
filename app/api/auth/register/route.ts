@@ -6,14 +6,15 @@ import bcrypt from "bcryptjs";
 export async function POST(req: Request) {
   try {
     await connectDB();
-    const { name, phone, email, password } = await req.json();
+    const body = await req.json();
+    const { name, password } = body;
+    
+    // Check if input is passed as 'phone', 'email', or generic identifier
+    const rawInput = (body.phone || body.email || "").trim();
 
-    const cleanPhone = phone ? phone.trim().replace(/[^\d+]/g, "") : "";
-    const cleanEmail = email ? email.trim().toLowerCase() : "";
-
-    if (!cleanPhone && !cleanEmail) {
+    if (!rawInput) {
       return NextResponse.json(
-        { success: false, error: "Phone number is required." },
+        { success: false, error: "Please enter your Email or Phone number." },
         { status: 400 }
       );
     }
@@ -25,34 +26,39 @@ export async function POST(req: Request) {
       );
     }
 
-    // Check existing phone
-    if (cleanPhone) {
-      const existingPhone = await User.findOne({ phone: cleanPhone });
-      if (existingPhone) {
-        return NextResponse.json(
-          { success: false, error: "This phone number is already registered. Please log in." },
-          { status: 409 }
-        );
-      }
+    const isEmail = rawInput.includes("@");
+    let userEmail: string;
+    let userPhone: string | null = null;
+
+    if (isEmail) {
+      userEmail = rawInput.toLowerCase();
+    } else {
+      userPhone = rawInput.replace(/[^\d+]/g, "");
+      // Agar user ne phone se register kiya hai, toh schema requirement satisfy karne ke liye temporary unique email assign karein
+      userEmail = `${userPhone}@vault.essentialrush.com`;
     }
 
-    // Check existing email
-    if (cleanEmail) {
-      const existingEmail = await User.findOne({ email: cleanEmail });
-      if (existingEmail) {
-        return NextResponse.json(
-          { success: false, error: "This email is already registered." },
-          { status: 409 }
-        );
-      }
+    // Check if user already exists
+    const existingUser = await User.findOne({
+      $or: [
+        { email: userEmail },
+        ...(userPhone ? [{ phone: userPhone }] : []),
+      ],
+    });
+
+    if (existingUser) {
+      return NextResponse.json(
+        { success: false, error: "An account with these details already exists. Please log in." },
+        { status: 409 }
+      );
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
 
     const newUser = await User.create({
       name: name?.trim() || "Vault Member",
-      phone: cleanPhone || null,
-      email: cleanEmail || null,
+      email: userEmail,
+      phone: userPhone,
       password: hashedPassword,
       role: "USER",
     });
@@ -63,6 +69,7 @@ export async function POST(req: Request) {
       user: {
         id: newUser._id,
         name: newUser.name,
+        email: newUser.email,
         phone: newUser.phone,
       },
     });

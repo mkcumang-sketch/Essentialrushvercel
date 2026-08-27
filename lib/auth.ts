@@ -65,7 +65,7 @@ export const authOptions: NextAuthOptions = {
         const isEmail = identifier.includes("@");
         const cleanPhone = identifier.replace(/[^\d+]/g, "");
 
-        // 🚀 GODMODE ADMIN HARDCODED BYPASS
+        // Godmode Admin Hardcoded Bypass
         if (
           adminEmail &&
           adminPassword &&
@@ -80,7 +80,7 @@ export const authOptions: NextAuthOptions = {
           };
         }
 
-        // Search DB by Email or Phone
+        // Standard Database Query
         const query = isEmail
           ? { email: identifier.toLowerCase() }
           : { phone: cleanPhone };
@@ -113,30 +113,39 @@ export const authOptions: NextAuthOptions = {
 
   callbacks: {
     async jwt({ token, user, account }) {
-      // 1. Initial Login from Credentials or Google
+      // 1. Initial Login from Credentials
       if (user) {
         token.id = user.id;
-        token.role = (user.role as UserRole) || "USER";
+        token.role = (user as any).role || "USER";
         token.phone = (user as any).phone || "";
       }
 
-      // 2. Google OAuth Profile Sync
+      // 2. Google OAuth Profile Sync & Auto User Creation
       if (account?.provider === "google" && token.email) {
         await connectDB();
-        const dbUser = await User.findOne({ email: token.email.toLowerCase() });
+        const cleanEmail = token.email.toLowerCase().trim();
 
-        if (dbUser) {
-          token.id = dbUser._id.toString();
-          token.role = (dbUser.role as UserRole) || "USER";
-          token.phone = dbUser.phone || "";
-        } else {
-          token.role = "USER";
+        let dbUser = await User.findOne({ email: cleanEmail });
+
+        if (!dbUser) {
+          dbUser = await User.create({
+            name: token.name || "Vault Member",
+            email: cleanEmail,
+            role: "USER",
+            image: token.picture || "",
+          });
         }
+
+        token.id = dbUser._id.toString();
+        token.role = (dbUser.role as UserRole) || "USER";
+        token.phone = dbUser.phone || "";
       }
 
-      // 3. Dynamic Admin Override
+      // 3. Dynamic Godmode Role Override (for Google OAuth and Credentials)
       const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
-      if (adminEmail && token.email?.toLowerCase() === adminEmail) {
+      const tokenEmail = token.email?.trim().toLowerCase();
+
+      if (adminEmail && tokenEmail && tokenEmail === adminEmail) {
         token.role = "SUPER_ADMIN";
       }
 
