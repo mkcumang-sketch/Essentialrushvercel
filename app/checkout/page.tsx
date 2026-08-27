@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ShieldCheck, MapPin, CheckCircle2, Tag, UserPlus, X as XIcon, X as CloseIcon } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, MapPin, CheckCircle2, Tag, UserPlus, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from "next-auth/react";

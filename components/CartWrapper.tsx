@@ -5,7 +5,7 @@ import { useCart } from "@/context/CartContext";
 import * as CartDrawerModule from "./CartDrawer"; 
 
 export default function CartWrapper() {
-  const { isCartOpen, setIsCartOpen, cartItems, updateQty } = useCart();
+  const { isCartOpen, setIsCartOpen, cartItems, updateQty, ...Rest } = useCart() as any ;
   
   // Ye line automatically default export ya named export dono ko handle kar legi
 // 🚀 Ye line 100% fail-safe hai, TypeScript ab koi sawal nahi karega

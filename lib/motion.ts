@@ -263,3 +263,4 @@ export const staggerFadeIn = {
   whileInView: "visible",
   viewport: { once: true, margin: "-50px" }
 };
+export const scrollRevealVariants = fadeUpVariants;

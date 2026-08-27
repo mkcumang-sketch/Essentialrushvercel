@@ -4,7 +4,9 @@ import GoogleProvider from "next-auth/providers/google";
 import connectDB from "@/lib/mongodb";
 import User from "@/models/usertemp";
 import bcrypt from "bcryptjs";
-import type { UserRole } from "@/types/next-auth";
+
+// Export UserRole explicitly to ensure type safety across the app
+export type UserRole = "USER" | "ADMIN" | "SUPER_ADMIN";
 
 declare module "next-auth" {
   interface Session extends DefaultSession {
@@ -15,7 +17,7 @@ declare module "next-auth" {
   }
 
   interface User {
-    role: UserRole;
+    role?: UserRole;
   }
 }
 
@@ -39,7 +41,6 @@ export const authOptions: NextAuthOptions = {
 
     CredentialsProvider({
       name: "Credentials",
-
       credentials: {
         email: { label: "Email", type: "text" },
         password: { label: "Password", type: "password" },
@@ -55,18 +56,18 @@ export const authOptions: NextAuthOptions = {
         const email = credentials.email.trim().toLowerCase();
         const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
 
-        // 🚀 FIX: .env.local HARDCODED ADMIN CHECK
-        // Agar credentials file wale admin se match hote hain, toh DB check bypass kar do
+        // 🚀 THE ULTIMATE GODMODE OVERRIDE:
+        // Bypass DB check if credentials match the admin environment variables
         if (adminEmail && email === adminEmail && credentials.password === process.env.ADMIN_PASSWORD) {
           return {
             id: "system-admin-id",
             name: "Godmode Admin",
             email: adminEmail,
-            role: "SUPER_ADMIN",
+            role: "SUPER_ADMIN" as UserRole,
           };
         }
 
-        // Normal Users ke liye DB check
+        // Standard User DB Check
         const user = await User.findOne({ email }).select("+password").exec();
 
         if (!user) {
@@ -86,7 +87,7 @@ export const authOptions: NextAuthOptions = {
           id: user._id.toString(),
           name: user.name || null,
           email: user.email || null,
-          role: user.role || "USER",
+          role: (user.role as UserRole) || "USER",
         };
       },
     }),
@@ -96,7 +97,7 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user, account }) {
       if (user) {
         token.id = user.id;
-        token.role = (user as { role?: string }).role || "USER";
+        token.role = (user.role as UserRole) || "USER";
       }
 
       if (account?.provider === "google" && token.email) {
@@ -105,14 +106,14 @@ export const authOptions: NextAuthOptions = {
         
         if (dbUser) {
           token.id = dbUser._id.toString();
-          token.role = dbUser.role || "USER";
+          token.role = (dbUser.role as UserRole) || "USER";
         } else {
           token.role = "USER";
         }
       }
 
-      // 🚀 THE ULTIMATE GODMODE OVERRIDE:
-      // Chahe wo Google se aaye ya form se, agar email ADMIN_EMAIL hai, toh assign SUPER_ADMIN!
+      // 🚀 GODMODE OVERRIDE FOR OAUTH:
+      // Assign SUPER_ADMIN role dynamically if the logged-in email matches ADMIN_EMAIL
       const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
       if (adminEmail && token.email?.toLowerCase() === adminEmail) {
         token.role = "SUPER_ADMIN";
@@ -123,8 +124,8 @@ export const authOptions: NextAuthOptions = {
 
     async session({ session, token }) {
       if (session.user) {
-        (session.user as { id?: string; role?: string }).id = token.id || "";
-        (session.user as { id?: string; role?: string }).role = token.role as string;
+        session.user.id = token.id;
+        session.user.role = token.role;
       }
       return session;
     },
