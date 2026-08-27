@@ -5,7 +5,6 @@ import connectDB from "@/lib/mongodb";
 import User from "@/models/usertemp";
 import bcrypt from "bcryptjs";
 
-// Export UserRole explicitly to ensure type safety across the app
 export type UserRole = "USER" | "ADMIN" | "SUPER_ADMIN";
 
 declare module "next-auth" {
@@ -13,11 +12,14 @@ declare module "next-auth" {
     user: {
       id: string;
       role: UserRole;
+      phone?: string;
     } & DefaultSession["user"];
   }
 
   interface User {
+    id: string;
     role?: UserRole;
+    phone?: string;
   }
 }
 
@@ -25,6 +27,7 @@ declare module "next-auth/jwt" {
   interface JWT {
     id: string;
     role: UserRole;
+    phone?: string;
   }
 }
 
@@ -35,13 +38,14 @@ export const authOptions: NextAuthOptions = {
 
   providers: [
     GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID as string,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+      clientId: process.env.GOOGLE_CLIENT_ID || "",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
     }),
 
     CredentialsProvider({
       name: "Credentials",
       credentials: {
+        phone: { label: "Phone or Email", type: "text" },
         email: { label: "Email", type: "text" },
         password: { label: "Password", type: "password" },
       },
@@ -49,16 +53,25 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         await connectDB();
 
-        if (!credentials?.email || !credentials?.password) {
-          throw new Error("Invalid credentials");
+        const identifier = (credentials?.phone || credentials?.email || "").trim();
+        const rawPassword = credentials?.password || "";
+
+        if (!identifier || !rawPassword) {
+          throw new Error("Please enter your Phone number/Email and password.");
         }
 
-        const email = credentials.email.trim().toLowerCase();
         const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+        const adminPassword = process.env.ADMIN_PASSWORD?.trim();
+        const isEmail = identifier.includes("@");
+        const cleanPhone = identifier.replace(/[^\d+]/g, "");
 
-        // 🚀 THE ULTIMATE GODMODE OVERRIDE:
-        // Bypass DB check if credentials match the admin environment variables
-        if (adminEmail && email === adminEmail && credentials.password === process.env.ADMIN_PASSWORD) {
+        // 🚀 GODMODE ADMIN HARDCODED BYPASS
+        if (
+          adminEmail &&
+          adminPassword &&
+          identifier.toLowerCase() === adminEmail &&
+          rawPassword === adminPassword
+        ) {
           return {
             id: "system-admin-id",
             name: "Godmode Admin",
@@ -67,26 +80,31 @@ export const authOptions: NextAuthOptions = {
           };
         }
 
-        // Standard User DB Check
-        const user = await User.findOne({ email }).select("+password").exec();
+        // Search DB by Email or Phone
+        const query = isEmail
+          ? { email: identifier.toLowerCase() }
+          : { phone: cleanPhone };
+
+        const user = await User.findOne(query).select("+password").exec();
 
         if (!user) {
-          throw new Error("User not found");
+          throw new Error("No account found with this Phone/Email.");
         }
         if (!user.password) {
-          throw new Error("Password not found");
+          throw new Error("No password set. Please log in with Google.");
         }
 
-        const isMatch = await bcrypt.compare(credentials.password, user.password);
+        const isMatch = await bcrypt.compare(rawPassword, user.password);
 
         if (!isMatch) {
-          throw new Error("Invalid password");
+          throw new Error("Incorrect password. Please try again.");
         }
 
         return {
           id: user._id.toString(),
-          name: user.name || null,
+          name: user.name || "Vault Member",
           email: user.email || null,
+          phone: user.phone || cleanPhone,
           role: (user.role as UserRole) || "USER",
         };
       },
@@ -95,25 +113,28 @@ export const authOptions: NextAuthOptions = {
 
   callbacks: {
     async jwt({ token, user, account }) {
+      // 1. Initial Login from Credentials or Google
       if (user) {
         token.id = user.id;
         token.role = (user.role as UserRole) || "USER";
+        token.phone = (user as any).phone || "";
       }
 
+      // 2. Google OAuth Profile Sync
       if (account?.provider === "google" && token.email) {
         await connectDB();
         const dbUser = await User.findOne({ email: token.email.toLowerCase() });
-        
+
         if (dbUser) {
           token.id = dbUser._id.toString();
           token.role = (dbUser.role as UserRole) || "USER";
+          token.phone = dbUser.phone || "";
         } else {
           token.role = "USER";
         }
       }
 
-      // 🚀 GODMODE OVERRIDE FOR OAUTH:
-      // Assign SUPER_ADMIN role dynamically if the logged-in email matches ADMIN_EMAIL
+      // 3. Dynamic Admin Override
       const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
       if (adminEmail && token.email?.toLowerCase() === adminEmail) {
         token.role = "SUPER_ADMIN";
@@ -125,10 +146,16 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id;
-        session.user.role = token.role;
+        session.user.role = token.role as UserRole;
+        (session.user as any).phone = token.phone || "";
       }
       return session;
     },
+  },
+
+  pages: {
+    signIn: "/login",
+    error: "/login",
   },
 
   secret: process.env.NEXTAUTH_SECRET,
@@ -145,8 +172,5 @@ export async function isSuperAdmin(): Promise<boolean> {
 
 export async function requireSuperAdmin(): Promise<boolean> {
   const session = await getServerSession(authOptions);
-  if (!session?.user) {
-    return false;
-  }
-  return session.user.role === "SUPER_ADMIN";
+  return session?.user?.role === "SUPER_ADMIN";
 }
