@@ -7,15 +7,6 @@ const nextConfig = {
       dynamic: 0,
       static: 30,
     },
-  },/** @type {import('next').NextConfig} */
-const nextConfig = {
-  reactStrictMode: true,
-  poweredByHeader: false,
-  experimental: {
-    staleTimes: {
-      dynamic: 0,
-      static: 30,
-    },
   },
   images: {
     remotePatterns: [
@@ -37,28 +28,6 @@ const nextConfig = {
         ],
       },
     ];
-  },
-};
-
-export default nextConfig;
-  images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "images.unsplash.com",
-        pathname: "/**",
-      },
-      {
-        protocol: "https",
-        hostname: "images.pexels.com",
-        pathname: "/**",
-      },
-      {
-        protocol: "https",
-        hostname: "res.cloudinary.com",
-        pathname: "/**",
-      },
-    ],
   },
 };
 
