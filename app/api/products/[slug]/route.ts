@@ -16,19 +16,80 @@ const Product: Model<any> =
   mongoose.models.Product ||
   mongoose.model("Product", ProductSchema);
 
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  try {
+    await connectDB();
+    const { slug } = await params;
+    const cleanSlug = sanitizeString(slug, 100);
+
+    if (!cleanSlug) {
+      return NextResponse.json(
+        { success: false, error: "Missing product identifier." },
+        { status: 400 }
+      );
+    }
+
+    const query = mongoose.Types.ObjectId.isValid(cleanSlug)
+      ? {
+          $or: [
+            { _id: new mongoose.Types.ObjectId(cleanSlug) },
+            { slug: { $eq: cleanSlug } },
+            { id: { $eq: cleanSlug } },
+          ],
+        }
+      : {
+          $or: [
+            { slug: { $eq: cleanSlug } },
+            { id: { $eq: cleanSlug } },
+          ],
+        };
+
+    const product = await Product.findOne(query).lean();
+
+    if (!product) {
+      return NextResponse.json(
+        { success: false, error: "Product not found." },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: product,
+    });
+  } catch (error: any) {
+    console.error("GET Product Error:", error);
+    return NextResponse.json(
+      { success: false, error: error.message || "Internal Server Error" },
+      { status: 500 }
+    );
+  }
+}
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if ((session?.user as any)?.role !== "SUPER_ADMIN") {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
+    const userRole = (session?.user as any)?.role;
+
+    if (!session || (userRole !== "ADMIN" && userRole !== "SUPER_ADMIN")) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized access." },
+        { status: 403 }
+      );
     }
 
     const contentLength = Number(req.headers.get("content-length") || 0);
     if (contentLength > 50 * 1024) {
-      return NextResponse.json({ success: false, error: "Payload too large" }, { status: 413 });
+      return NextResponse.json(
+        { success: false, error: "Payload too large." },
+        { status: 413 }
+      );
     }
 
     await connectDB();
@@ -36,7 +97,10 @@ export async function PATCH(
     const cleanSlug = sanitizeString(slug, 100);
 
     if (!cleanSlug) {
-      return NextResponse.json({ success: false, error: "Missing product identifier." }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "Missing product identifier." },
+        { status: 400 }
+      );
     }
 
     const dataToUpdate = await req.json();
@@ -47,7 +111,7 @@ export async function PATCH(
         cleanSlug,
         { $set: dataToUpdate },
         { new: true, runValidators: true }
-      );
+      ).lean();
     }
 
     if (!updatedProduct) {
@@ -60,11 +124,14 @@ export async function PATCH(
         },
         { $set: dataToUpdate },
         { new: true, runValidators: true }
-      );
+      ).lean();
     }
 
     if (!updatedProduct) {
-      return NextResponse.json({ success: false, error: "Product not found." }, { status: 404 });
+      return NextResponse.json(
+        { success: false, error: "Product not found." },
+        { status: 404 }
+      );
     }
 
     return NextResponse.json({
@@ -79,8 +146,4 @@ export async function PATCH(
       { status: 500 }
     );
   }
-}
-
-export async function GET() {
-  return NextResponse.json({ error: "Method Not Allowed" }, { status: 405 });
 }

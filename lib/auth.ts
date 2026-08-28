@@ -5,7 +5,8 @@ import connectDB from "@/lib/mongodb";
 import User from "@/models/usertemp";
 import bcrypt from "bcryptjs";
 
-export type UserRole = "USER" | "ADMIN" | "SUPER_ADMIN";
+// ✅ Added AGENT and STAFF to UserRole
+export type UserRole = "USER" | "AGENT" | "STAFF" | "ADMIN" | "SUPER_ADMIN";
 
 declare module "next-auth" {
   interface Session extends DefaultSession {
@@ -37,7 +38,6 @@ export const authOptions: NextAuthOptions = {
     maxAge: 30 * 24 * 60 * 60, // 30 Days
   },
 
-  // 🛡️ CSRF & Session Hijacking Cookies Defense
   useSecureCookies: process.env.NODE_ENV === "production",
   cookies: {
     sessionToken: {
