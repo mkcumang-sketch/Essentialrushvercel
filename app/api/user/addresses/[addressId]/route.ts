@@ -4,13 +4,11 @@ export const fetchCache = "force-no-store";
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth";
-import mongoose, { Model } from "mongoose";
+import mongoose from "mongoose";
 import { authOptions } from "@/lib/auth";
 import User from "@/models/usertemp";
 import connectDB from "@/lib/mongodb";
 import { sanitizeString } from "@/lib/sanitize";
-
-const UserModel = User as unknown as Model<any>;
 
 export async function DELETE(
   req: Request,
@@ -32,7 +30,7 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: "Invalid address ID" }, { status: 400 });
     }
 
-    const updatedUser = await UserModel.findOneAndUpdate(
+    const updatedUser: any = await (User as any).findOneAndUpdate(
       {
         _id: new mongoose.Types.ObjectId(userId),
         "addresses._id": new mongoose.Types.ObjectId(cleanAddressId),
@@ -87,7 +85,7 @@ export async function PUT(
       return NextResponse.json({ success: false, error: "Please enter a valid address." }, { status: 400 });
     }
 
-    const updatedUser = await UserModel.findOneAndUpdate(
+    const updatedUser: any = await (User as any).findOneAndUpdate(
       {
         _id: new mongoose.Types.ObjectId(userId),
         "addresses._id": new mongoose.Types.ObjectId(cleanAddressId),
@@ -107,7 +105,7 @@ export async function PUT(
     }
 
     if (isDefault) {
-      await UserModel.updateOne(
+      await (User as any).updateOne(
         { _id: new mongoose.Types.ObjectId(userId) },
         { $set: { "addresses.$[other].isDefault": false } },
         { arrayFilters: [{ "other._id": { $ne: new mongoose.Types.ObjectId(cleanAddressId) } }] }
