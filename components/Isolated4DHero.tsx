@@ -95,7 +95,7 @@ export default function Isolated4DHero({ slides: propSlides }: HeroProps) {
         if (e.key === "Enter" || e.key === " ") router.push(currentSlide.ctaLink || "/shop");
       }}
       aria-label="Hero Banner Carousel"
-      className="relative h-[100dvh] w-full bg-[#0B0E11] cursor-pointer overflow-hidden perspective-[1200px] font-sans"
+      className="relative h-[100dvh] w-full bg-[#0B0E11] cursor-pointer overflow-hidden font-sans"
     >
       <motion.div
         style={{ rotateX: smoothRotateX, rotateY: smoothRotateY, transformStyle: "preserve-3d" }}
@@ -107,11 +107,11 @@ export default function Isolated4DHero({ slides: propSlides }: HeroProps) {
           animate={{ rotate: 360 }}
           transition={{ duration: 120, repeat: Infinity, ease: "linear" }}
           className="absolute z-20 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[140vw] h-[140vw] md:w-[85vh] md:h-[85vh] rounded-full pointer-events-none opacity-30"
-          style={{ border: "1px dashed rgba(212,175,55,0.25)", transform: "translateZ(-40px)" }}
+          style={{ border: "1px dashed rgba(212,175,55,0.25)" }}
         />
 
         {/* Background Media */}
-        <div className="absolute inset-0 w-full h-full z-10 overflow-hidden bg-black pointer-events-none" style={{ transform: "translateZ(-80px)" }}>
+        <div className="absolute inset-0 w-full h-full z-10 overflow-hidden bg-black pointer-events-none">
           <AnimatePresence mode="wait">
             <motion.div
               key={currentIndex}
@@ -146,7 +146,7 @@ export default function Isolated4DHero({ slides: propSlides }: HeroProps) {
         </div>
 
         {/* Foreground Content with Blur-to-Sharp Reveal */}
-        <div className="absolute inset-0 z-30 flex items-center justify-center text-center px-6 pointer-events-none" style={{ transform: "translateZ(60px)" }}>
+        <div className="absolute inset-0 z-30 flex items-center justify-center text-center px-6 pointer-events-none">
           <AnimatePresence mode="wait">
             <motion.div
               key={currentIndex}
@@ -175,28 +175,30 @@ export default function Isolated4DHero({ slides: propSlides }: HeroProps) {
             </motion.div>
           </AnimatePresence>
         </div>
-
-        {/* Slide Indicators */}
-        {slides.length > 1 && (
-          <div className="absolute bottom-10 left-0 right-0 z-40 flex justify-center gap-3 pointer-events-none" style={{ transform: "translateZ(40px)" }}>
-            <div className="flex gap-3 bg-black/40 border border-white/10 px-6 py-3 rounded-full backdrop-blur-md pointer-events-auto">
-              {slides.map((_, i) => (
-                <button
-                  key={i}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setCurrentIndex(i);
-                  }}
-                  aria-label={`Go to slide ${i + 1}`}
-                  className={`h-2 rounded-full transition-all duration-500 ${
-                    i === currentIndex ? "w-8 bg-[#D4AF37]" : "w-2 bg-white/30 hover:bg-white/70"
-                  }`}
-                />
-              ))}
-            </div>
-          </div>
-        )}
       </motion.div>
+
+      {/* Slide Indicators - Moved outside 3D parent for pure screen-relative centering */}
+      {slides.length > 1 && (
+        <div className="absolute bottom-6 md:bottom-10 left-1/2 -translate-x-1/2 z-40 flex items-center justify-center pointer-events-auto">
+          <div className="flex items-center gap-2.5 md:gap-3 bg-black/50 border border-white/15 px-4 md:px-6 py-2 md:py-3 rounded-full backdrop-blur-xl shadow-2xl">
+            {slides.map((_, i) => (
+              <button
+                key={i}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCurrentIndex(i);
+                }}
+                aria-label={`Go to slide ${i + 1}`}
+                className={`rounded-full transition-all duration-500 cursor-pointer ${
+                  i === currentIndex
+                    ? "w-7 md:w-8 h-2 bg-[#D4AF37] shadow-[0_0_10px_rgba(212,175,55,0.8)]"
+                    : "w-2 h-2 bg-white/30 hover:bg-white/70"
+                }`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
