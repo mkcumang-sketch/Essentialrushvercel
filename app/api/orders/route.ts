@@ -6,6 +6,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { revalidatePath } from 'next/cache';
 import { sanitizeString, escapeRegex } from '@/lib/sanitize';
+import { emitAiAlert, emitAiAuditLog } from '@/lib/ai-telemetry';
 
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
@@ -24,7 +25,9 @@ export async function GET() {
     const db = mongoose.connection.db;
 
     let orders;
-    if (userRole === 'SUPER_ADMIN') {
+    const isStaffOrAdmin = ['SUPER_ADMIN', 'ADMIN', 'STAFF', 'AGENT'].includes(userRole);
+
+    if (isStaffOrAdmin) {
       orders = await Order.find({}).sort({ createdAt: -1 }).lean();
     } else {
       orders = await Order.find({
@@ -58,15 +61,20 @@ export async function GET() {
 export async function PATCH(req: Request) {
   try {
     const session = await getServerSession(authOptions);
-    if ((session?.user as any)?.role !== 'SUPER_ADMIN') {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 403 });
+    const userRole = (session?.user as any)?.role;
+    const userEmail = session?.user?.email;
+    const allowedRoles = ['SUPER_ADMIN', 'ADMIN', 'STAFF', 'AGENT'];
+
+    if (!session || !session.user || !allowedRoles.includes(userRole)) {
+      return NextResponse.json({ success: false, error: 'Unauthorized access' }, { status: 403 });
     }
 
     await connectDB();
     const body = await req.json();
-    const id = sanitizeString(body?.id, 50);
+    const id = sanitizeString(body?.id || body?.orderId, 50);
     const status = sanitizeString(body?.status, 30);
-    const trackingId = sanitizeString(body?.trackingId, 100);
+    const trackingId = sanitizeString(body?.trackingId || body?.trackingNumber, 100);
+    const courier = sanitizeString(body?.courier, 100);
 
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json({ success: false, error: 'Valid Order ID required' }, { status: 400 });
@@ -77,11 +85,17 @@ export async function PATCH(req: Request) {
 
     const updateData: Record<string, any> = {};
     if (status) updateData.status = status;
-    if (trackingId !== undefined) updateData.trackingId = trackingId;
+    if (trackingId !== undefined) {
+      updateData.trackingId = trackingId;
+      updateData.trackingNumber = trackingId;
+    }
+    if (courier !== undefined) {
+      updateData.courier = courier;
+    }
 
     const currentStatus = status ? status.toUpperCase() : '';
 
-    // 🛡️ Atomic Reward Credit Check
+    // 🛡️ Atomic Referral & Agent Reward Processing
     if (currentStatus === 'DELIVERED' && order.referralCode && !order.isRewardCredited) {
       const cleanCode = escapeRegex(order.referralCode.trim().toUpperCase());
       const db = mongoose.connection.db;
@@ -118,7 +132,36 @@ export async function PATCH(req: Request) {
     }
 
     const updatedOrder = await Order.findByIdAndUpdate(id, { $set: updateData }, { new: true });
+
+    // 🛡️ Emit Non-blocking AI Audit Log
+    emitAiAuditLog({
+      agentName: 'Order Agent',
+      requestedOperation: 'UPDATE_ORDER_LIFECYCLE',
+      decision: `Order #${order.orderId || id} updated to status '${status || order.status}'.`,
+      toolUsed: 'Orders-API-Patch',
+      permissionLevel: 'AUTO',
+      executedBy: userEmail || userRole || 'STAFF',
+      riskScore: currentStatus === 'CANCELLED' ? 40 : 5,
+      status: 'SUCCESS',
+      resultSummary: `Status: ${status || order.status}, Tracking: ${trackingId || 'N/A'}`,
+      dataAccessed: { orderId: order.orderId, previousStatus: order.status, newStatus: status },
+    });
+
+    if (currentStatus === 'CANCELLED') {
+      emitAiAlert({
+        category: 'ORDERS',
+        severity: 'MEDIUM',
+        title: `Order Voided / Cancelled: #${order.orderId}`,
+        description: `Order valued at ₹${order.totalAmount.toLocaleString('en-IN')} was marked as Cancelled.`,
+        impact: 'Loss of conversion and potential inventory restock requirement.',
+        aiAnalysis: 'Order cancellation executed via administrative interface.',
+        recommendedAction: 'Verify if inventory units must be restored.',
+        affectedEntityId: order.orderId,
+      });
+    }
+
     revalidatePath('/godmode');
+    revalidatePath('/agent');
 
     return NextResponse.json({ success: true, data: updatedOrder });
   } catch (error) {
@@ -130,7 +173,10 @@ export async function PATCH(req: Request) {
 export async function DELETE(req: Request) {
   try {
     const session = await getServerSession(authOptions);
-    if ((session?.user as any)?.role !== 'SUPER_ADMIN') {
+    const userRole = (session?.user as any)?.role;
+    const userEmail = session?.user?.email;
+
+    if (!session || !session.user || userRole !== 'SUPER_ADMIN') {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 403 });
     }
 
@@ -142,10 +188,25 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ success: false, error: 'Valid Order ID required' }, { status: 400 });
     }
 
-    await Order.findByIdAndDelete(cleanId);
-    revalidatePath('/godmode');
+    const deletedOrder = await Order.findByIdAndDelete(cleanId);
 
-    return NextResponse.json({ success: true, message: 'Order Deleted' });
+    // 🛡️ Telemetry on deletion
+    emitAiAuditLog({
+      agentName: 'Security Agent',
+      requestedOperation: 'DELETE_ORDER_RECORD',
+      decision: `Purged order ${cleanId} from persistent database.`,
+      toolUsed: 'Orders-API-Delete',
+      permissionLevel: 'APPROVAL',
+      executedBy: userEmail || 'SUPER_ADMIN',
+      riskScore: 70,
+      status: 'SUCCESS',
+      resultSummary: `Order ${cleanId} deleted permanently.`,
+    });
+
+    revalidatePath('/godmode');
+    revalidatePath('/agent');
+
+    return NextResponse.json({ success: true, message: 'Order Deleted', deletedOrder });
   } catch (error) {
     return NextResponse.json({ success: false, error: 'Delete failed' }, { status: 500 });
   }

@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import { Order } from '@/models/Order';
+import { Product } from '@/models/Product';
 import AbandonedCart from '@/models/AbandonedCart';
 import mongoose from 'mongoose';
 import { revalidatePath } from 'next/cache';
 import { handleError } from '@/lib/error-handler';
 import { checkRateLimit, getRateLimitHeaders } from '@/lib/rate-limit';
 import { sanitizeString, escapeRegex } from '@/lib/sanitize';
+import { emitAiAlert, emitAiIncident } from '@/lib/ai-telemetry';
 
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
@@ -36,12 +38,24 @@ interface CheckoutRequest {
 }
 
 export async function POST(req: Request) {
+  const ip = req.headers.get("x-forwarded-for")?.split(',')[0]?.trim() || "anonymous";
+
   try {
     // 🛡️ 1. Rate Limiting Protection (User Tier)
-    const ip = req.headers.get("x-forwarded-for")?.split(',')[0]?.trim() || "anonymous";
     const rateLimit = await checkRateLimit(ip, "user");
     
     if (!rateLimit.success) {
+      // Background AI Security Telemetry
+      emitAiAlert({
+        category: "SECURITY",
+        severity: "HIGH",
+        title: "Checkout Rate Limit Exceeded",
+        description: `IP address ${ip} generated excessive checkout requests.`,
+        impact: "Possible automated script or bot checkout attack.",
+        aiAnalysis: "IP triggered rapid multi-request rate cap on checkout route.",
+        recommendedAction: "Verify if IP requires temporary firewall blockage.",
+      });
+
       return NextResponse.json(
         { success: false, error: 'Too many checkout attempts. Please try again later.' },
         { status: 429, headers: getRateLimitHeaders(rateLimit) }
@@ -80,8 +94,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 🛡️ 3. Tamper-Proof Server-Side Database Price Verification
-    const Product = mongoose.models.Product || mongoose.model("Product", new mongoose.Schema({ price: Number, offerPrice: Number }));
+    // 🛡️ 3. Server-Side Database Price Verification using official Product Model
     let verifiedSubtotal = 0;
     const verifiedItems = [];
     
@@ -89,7 +102,7 @@ export async function POST(req: Request) {
       let actualPrice = Number(item.price) || 0;
       
       if (mongoose.Types.ObjectId.isValid(item.productId)) {
-        const dbProduct = await Product.findById(item.productId).select("price offerPrice").lean() as any;
+        const dbProduct = await Product.findById(item.productId).select("price offerPrice name").lean();
         if (dbProduct) {
           actualPrice = Number(dbProduct.offerPrice || dbProduct.price || actualPrice);
         }
@@ -111,8 +124,9 @@ export async function POST(req: Request) {
     const discount = Math.max(0, Number(body.discountApplied) || 0);
     const verifiedTotalAmount = Math.max(0, verifiedSubtotal + shipping - discount);
 
+    const orderId = `ORD-${Date.now().toString().slice(-6)}`;
     const newOrder = await Order.create({
-      orderId: `ORD-${Date.now().toString().slice(-6)}`,
+      orderId,
       customer: {
         name: `${cleanFirstName} ${cleanLastName}`.trim(),
         email: cleanEmail,
@@ -137,7 +151,21 @@ export async function POST(req: Request) {
       isRewardCredited: false
     });
 
-    // 🛡️ 4. Referral / Agent Commission Processing
+    // 🛡️ 4. High Valuation / Fraud Detection Alert
+    if (verifiedTotalAmount >= 100000) {
+      emitAiAlert({
+        category: "ORDERS",
+        severity: "MEDIUM",
+        title: "High Valuation Order Placed",
+        description: `Order ${orderId} placed for ₹${verifiedTotalAmount.toLocaleString('en-IN')}.`,
+        impact: "Requires insurance tag and priority courier routing.",
+        aiAnalysis: "High basket size transaction successfully created.",
+        recommendedAction: "Ensure phone verification before dispatching high-value timepiece.",
+        affectedEntityId: orderId,
+      });
+    }
+
+    // 🛡️ 5. Referral / Agent Commission Processing
     if (body.referralCode) {
       const cleanCode = sanitizeString(body.referralCode, 30).toUpperCase();
       const safeCodeRegex = new RegExp(`^${escapeRegex(cleanCode)}$`, 'i');
@@ -158,7 +186,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // 🛡️ 5. Sync Abandoned Cart status to CONVERTED
+    // 🛡️ 6. Sync Abandoned Cart status to CONVERTED
     await AbandonedCart.updateOne(
       { $or: [{ phone: cleanPhone }, { email: cleanEmail }] },
       { $set: { status: 'CONVERTED' } }
@@ -176,6 +204,18 @@ export async function POST(req: Request) {
     const errorInfo = handleError(error);
     console.error("❌ POST Checkout Error:", errorInfo);
     
+    // Telemetry Incident Dispatch on Checkout Failure
+    emitAiIncident({
+      service: "Commerce Checkout",
+      route: "/api/checkout",
+      severity: "P1",
+      errorTitle: errorInfo.message || "Checkout Exception",
+      errorStack: error instanceof Error ? error.stack : undefined,
+      possibleCause: "Database timeout or invalid payload serialization during order creation.",
+      impact: "Customer was unable to complete payment/order creation.",
+      recommendedFix: "Inspect MongoDB connection health and verify customer payload structure.",
+    });
+
     return NextResponse.json(
       { 
         success: false, 

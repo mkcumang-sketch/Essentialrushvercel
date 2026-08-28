@@ -39,17 +39,16 @@ export function getLoyaltyDiscount(totalSpent: number): number {
 export function getLoyaltyBadge(
   tier: string
 ): { label: string; color: string; bg: string } {
-  const badges: Record<string, { label: string; color: string; bg: string }> =
-    {
-      "Silver Vault": { label: "Silver", color: "#666666", bg: "#F3F3F3" },
-      "Gold Vault": { label: "Gold", color: "#D4AF37", bg: "#FFF8E7" },
-      "Platinum Elite": { label: "Platinum", color: "#E5E4E2", bg: "#F5F5F5" },
-      "Diamond Sovereign": {
-        label: "Diamond",
-        color: "#00CED1",
-        bg: "#E0FFFF",
-      },
-    };
+  const badges: Record<string, { label: string; color: string; bg: string }> = {
+    "Silver Vault": { label: "Silver", color: "#666666", bg: "#F3F3F3" },
+    "Gold Vault": { label: "Gold", color: "#D4AF37", bg: "#FFF8E7" },
+    "Platinum Elite": { label: "Platinum", color: "#E5E4E2", bg: "#F5F5F5" },
+    "Diamond Sovereign": {
+      label: "Diamond",
+      color: "#00CED1",
+      bg: "#E0FFFF",
+    },
+  };
 
   return badges[tier] || badges["Silver Vault"];
 }
@@ -160,9 +159,6 @@ const NotificationSchema = new Schema(
 
 const UserSchema = new Schema<IUser>(
   {
-    // ========================================================================
-    // BASIC INFORMATION
-    // ========================================================================
     name: {
       type: String,
       required: [true, "Name is required"],
@@ -221,16 +217,13 @@ const UserSchema = new Schema<IUser>(
     role: {
       type: String,
       enum: {
-        values: ["USER", "ADMIN", "SUPER_ADMIN"],
-        message: "Role must be USER, ADMIN, or SUPER_ADMIN",
+        values: ["USER", "AGENT", "STAFF", "ADMIN", "SUPER_ADMIN"],
+        message: "Role must be USER, AGENT, STAFF, ADMIN, or SUPER_ADMIN",
       },
       default: "USER",
       index: true,
     },
 
-    // ========================================================================
-    // REFERRAL SYSTEM
-    // ========================================================================
     myReferralCode: {
       type: String,
       unique: true,
@@ -257,9 +250,6 @@ const UserSchema = new Schema<IUser>(
       min: [0, "Total earned cannot be negative"],
     },
 
-    // ========================================================================
-    // WALLET SYSTEM
-    // ========================================================================
     walletPoints: {
       type: Number,
       default: 0,
@@ -278,9 +268,6 @@ const UserSchema = new Schema<IUser>(
       min: [0, "Pending wallet balance cannot be negative"],
     },
 
-    // ========================================================================
-    // LOYALTY SYSTEM
-    // ========================================================================
     loyaltyTier: {
       type: String,
       enum: {
@@ -310,9 +297,6 @@ const UserSchema = new Schema<IUser>(
       index: true,
     },
 
-    // ========================================================================
-    // SECURITY
-    // ========================================================================
     resetOtp: {
       type: String,
       select: false,
@@ -324,9 +308,6 @@ const UserSchema = new Schema<IUser>(
       index: true,
     },
 
-    // ========================================================================
-    // NOTIFICATIONS
-    // ========================================================================
     addresses: {
       type: [AddressSchema],
       default: [],
@@ -356,19 +337,13 @@ const UserSchema = new Schema<IUser>(
   }
 );
 
-// ============================================================================
-// INDEXES
-// ============================================================================
-
+// Indexes
 UserSchema.index({ email: 1, createdAt: -1 });
 UserSchema.index({ role: 1, createdAt: -1 });
 UserSchema.index({ totalSpent: -1 });
 UserSchema.index({ "notifications.unread": 1, "notifications.time": -1 });
 
-// ============================================================================
-// INSTANCE METHODS
-// ============================================================================
-
+// Instance Methods
 UserSchema.methods.calculateLoyaltyTier = function (): string {
   const newTier = getLoyaltyTier(this.totalSpent);
   if (newTier !== this.loyaltyTier) {
@@ -405,7 +380,6 @@ UserSchema.methods.addNotification = async function (
     time: new Date(),
   });
 
-  // Keep only last 100 notifications
   if (this.notifications.length > 100) {
     this.notifications = this.notifications.slice(0, 100);
   }
@@ -432,22 +406,6 @@ UserSchema.methods.clearNotifications = async function (): Promise<void> {
   await this.save();
 };
 
-// ============================================================================
-// STATIC METHODS
-// ============================================================================
-
-UserSchema.statics.findByEmail = async function (email: string) {
-  return this.findOne({ email: email.toLowerCase() });
-};
-
-UserSchema.statics.findByReferralCode = async function (code: string) {
-  return this.findOne({ myReferralCode: code.toUpperCase() });
-};
-
-// ============================================================================
-// MIDDLEWARE
-// ============================================================================
-
 // Auto-calculate loyalty tier before saving
 UserSchema.pre<IUser>("save", function (next) {
   if (this.totalSpent !== undefined) {
@@ -469,12 +427,8 @@ UserSchema.methods.toJSON = function () {
   return user;
 };
 
-// ============================================================================
-// MODEL EXPORT
-// ============================================================================
-
-const UserModel: Model<IUser> =
+export const User: Model<IUser> =
   (mongoose.models.User as Model<IUser>) ||
   mongoose.model<IUser>("User", UserSchema);
 
-export default UserModel;
+export default User;

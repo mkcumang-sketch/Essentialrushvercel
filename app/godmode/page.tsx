@@ -33,8 +33,8 @@ import {
 } from "lucide-react";
 
 import dynamic from "next/dynamic";
-import BrandAmbassadors from "@/components/godmode/tabs_temp/BrandAmbassadorsTab";
 import { useSession, signIn, signOut } from "next-auth/react";
+import BrandAmbassadors from "@/components/godmode/tabs_temp/BrandAmbassadorsTab";
 import CustomersCrm from "@/components/godmode/tabs_temp/CustomersCrm";
 import CouponMarketingTab from "@/components/godmode/tabs_temp/CouponMarketing";
 import DashboardTab from "@/components/godmode/tabs_temp/DashboardTab";
@@ -47,6 +47,7 @@ import SalesForceTab from "@/components/godmode/tabs_temp/SalesForceTab";
 import SecurityTab from "@/components/godmode/tabs_temp/SecurityTab";
 import WebsiteBuilderTab from "@/components/godmode/tabs_temp/WebsiteBuilderTab";
 import WithdrawalTab from "@/components/godmode/tabs_temp/WithdrawalTab";
+import AiCommandCenterTab from "@/components/godmode/tabs_temp/AiCommandCenterTab";
 
 // =====================================================
 // TYPES
@@ -71,11 +72,11 @@ import type {
 
 const MODULES = [
   { id: "FULL_DASHBOARD", icon: BarChart3, label: "Main Dashboard" },
+  { id: "AI_COMMAND_CENTER", icon: Zap, label: "AI Command Center" },
   { id: "INVENTORY", icon: Package, label: "Products & Inventory" },
   { id: "COUPONS", label: "Coupons & Offers", icon: Tag },
   { id: "ORDER_TRACKER", icon: Truck, label: "Manage Orders" },
   { id: "CRM", icon: Users, label: "Customers & CRM" },
-  { id: "MARKETING", icon: Gift, label: "Coupons & Marketing" },
   { id: "PAGE_BUILDER", icon: Layout, label: "Website Builder" },
   { id: "AMBASSADORS", icon: Award, label: "Brand Ambassadors" },
   { id: "SEO_ENGINE", icon: Globe, label: "SEO Command Center" },
@@ -83,7 +84,6 @@ const MODULES = [
   { id: "REVIEWS", icon: Star, label: "Customer Reviews" },
   { id: "SALES_FORCE", icon: LinkIcon, label: "Affiliates & Partners" },
   { id: "WITHDRAWALS", icon: Landmark, label: "Withdrawal Requests" },
-  { id: "AI_ENGINE", icon: Zap, label: "Smart Pricing AI" },
   { id: "SECURITY", icon: ShieldAlert, label: "Security & Maintenance" },
 ];
 
@@ -289,8 +289,6 @@ function AdminDashboard() {
     "Modern Complications",
   ]);
 
-  const [newCategory, setNewCategory] = useState("");
-
   const [faqs, setFaqs] = useState([
     { q: "Are these authentic?", a: "Yes, 100% verified." },
   ]);
@@ -364,13 +362,6 @@ function AdminDashboard() {
     },
   });
 
-  const [couponForm, setCouponForm] = useState<CouponForm>({
-    code: "",
-    discountValue: "",
-    minOrder: "",
-    validUntil: "",
-  });
-
   const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
 
   const [agentForm, setAgentForm] = useState<AgentForm>({
@@ -381,25 +372,9 @@ function AdminDashboard() {
     commissionRate: 5,
   });
 
-  const [pricingRules, setPricingRules] = useState<PricingRules>({
-    isAiPricingActive: true,
-    maxMarkupPercent: 15,
-    maxDiscountPercent: 10,
-    lowStockThreshold: 3,
-    trendingThreshold: 10,
-  });
-
-  // =====================================================
-  // LOGGING
-  // =====================================================
-
   const addLog = useCallback((msg: string) => {
     setSystemLogs((prev) => [msg, ...prev].slice(0, 8));
   }, []);
-
-  // =====================================================
-  // LOGOUT
-  // =====================================================
 
   const handleAdminLogout = async () => {
     try {
@@ -408,13 +383,8 @@ function AdminDashboard() {
     } catch (error) {
       console.error(error);
     }
-
     await signOut({ callbackUrl: "/" });
   };
-
-  // =====================================================
-  // FETCH DASHBOARD DATA
-  // =====================================================
 
   const fetchDashboardData = useCallback(
     async (silent = false) => {
@@ -432,7 +402,6 @@ function AdminDashboard() {
           resProducts,
           resAgents,
           resOrders,
-          resRules,
           resAnalytics,
           resReviews,
           resMarketing,
@@ -453,9 +422,6 @@ function AdminDashboard() {
           ),
           fetch(`/api/orders?t=${ts}`).then((r) =>
             r.ok ? r.json() : { data: [] }
-          ),
-          fetch(`/api/ai/rules?t=${ts}`).then((r) =>
-            r.ok ? r.json() : { data: null }
           ),
           fetch(`/api/dashboard/full-analytics?t=${ts}`).then((r) =>
             r.ok ? r.json() : null
@@ -488,37 +454,22 @@ function AdminDashboard() {
 
         if (resAgents.data) setAgents(resAgents.data);
         if (resOrders.data) setOrders(resOrders.data);
-        if (resRules.data) setPricingRules(resRules.data);
-
-        if (resAnalytics && resAnalytics.success) {
-          setFullAnalytics(resAnalytics);
-        }
-
+        if (resAnalytics && resAnalytics.success) setFullAnalytics(resAnalytics);
         if (resCelebs.data) setCelebs(resCelebs.data);
-
-        if (resReviews.data) {
-          const sortedRevs = resReviews.data.sort((a: any, b: any) => {
-            if (a.visibility === "pending" && b.visibility !== "pending") {
-              return -1;
-            }
-            if (b.visibility === "pending" && a.visibility !== "pending") {
-              return 1;
-            }
-            return (
-              new Date(b.createdAt).getTime() -
-              new Date(a.createdAt).getTime()
-            );
-          });
-
-          setAllReviews(sortedRevs);
-        }
-
         if (resMarketing.data) setCoupons(resMarketing.data);
         if (resCust.data) setCustomers(resCust.data);
 
+        if (resReviews.data) {
+          const sortedRevs = resReviews.data.sort((a: any, b: any) => {
+            if (a.visibility === "pending" && b.visibility !== "pending") return -1;
+            if (b.visibility === "pending" && a.visibility !== "pending") return 1;
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          });
+          setAllReviews(sortedRevs);
+        }
+
         if (resCms.data && !silent) {
           const cms = resCms.data;
-
           if (cms.heroSlides) setHeroSlides(cms.heroSlides);
           if (cms.aboutConfig) setAboutConfig(cms.aboutConfig);
           if (cms.galleryImages) setGalleryImages(cms.galleryImages);
@@ -532,10 +483,7 @@ function AdminDashboard() {
         }
       } catch (error) {
         console.error("Dashboard Sync Error:", error);
-
-        if (!silent) {
-          addLog("Error: Database connection disrupted.");
-        }
+        if (!silent) addLog("Error: Database connection disrupted.");
       } finally {
         if (!silent) setIsSyncing(false);
       }
@@ -543,44 +491,15 @@ function AdminDashboard() {
     [addLog]
   );
 
-  // =====================================================
-  // INITIAL DATA LOAD
-  // =====================================================
-
   useEffect(() => {
     if (session?.user?.role === "SUPER_ADMIN") {
       fetchDashboardData();
     }
   }, [session, fetchDashboardData]);
 
-  // =====================================================
-  // HERO SLIDES
-  // =====================================================
-
-  const handleAddHeroSlide = () => {
-    setHeroSlides((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        type: "video",
-        url: "",
-        heading: "New Banner",
-      },
-    ]);
-  };
-
-  const handleRemoveHeroSlide = (id: number) => {
-    setHeroSlides((prev) => prev.filter((slide) => slide.id !== id));
-  };
-
-  // =====================================================
-  // SAVE CMS
-  // =====================================================
-
   const handleSaveCMS = async () => {
     setIsSyncing(true);
     addLog("Pushing UI configuration to database...");
-
     try {
       const res = await fetch("/api/cms", {
         method: "POST",
@@ -598,10 +517,7 @@ function AdminDashboard() {
           legalPages,
         }),
       });
-
       if (!res.ok) throw new Error("CMS save failed");
-
-      addLog("Settings Saved Successfully!");
       addLog("CMS sync complete.");
     } catch (error) {
       console.error(error);
@@ -611,60 +527,23 @@ function AdminDashboard() {
     }
   };
 
-  // =====================================================
-  // SAVE AI RULES
-  // =====================================================
-
-  const handleSaveAIRules = async () => {
-    setIsSyncing(true);
-    addLog("Pushing pricing algorithms...");
-
-    try {
-      const res = await fetch("/api/ai/rules", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(pricingRules),
-      });
-
-      if (!res.ok) throw new Error("Failed to save rules");
-
-      addLog("Pricing Rules Updated Successfully!");
-      addLog("Rules updated.");
-    } catch (error) {
-      console.error(error);
-      addLog("Failed to save pricing rules.");
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  // =====================================================
-  // 🚀 AFFILIATES / AGENTS LOGIC
-  // =====================================================
-
   const handleSaveAgent = async () => {
     if (!agentForm.name || !agentForm.code) {
       addLog("Name and Code are required!");
       return;
     }
-    
     setIsSyncing(true);
-    addLog("Saving new affiliate partner...");
-
     try {
       const res = await fetch("/api/agents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(agentForm),
       });
-
       if (!res.ok) throw new Error("Failed to save affiliate");
-
-      addLog("Affiliate Added Successfully!");
       addLog("Affiliate system updated.");
-      setIsAgentModalOpen(false); // Close Modal
-      setAgentForm({ name: "", email: "", code: "", tier: "Partner", commissionRate: 5 }); // Reset Form
-      fetchDashboardData(true); // Refresh table
+      setIsAgentModalOpen(false);
+      setAgentForm({ name: "", email: "", code: "", tier: "Partner", commissionRate: 5 });
+      fetchDashboardData(true);
     } catch (error) {
       console.error(error);
       addLog("Failed to save affiliate.");
@@ -674,14 +553,12 @@ function AdminDashboard() {
   };
 
   const handleDeleteAffiliate = async (id: string) => {
-    // Direct deletion without confirmation for admin speed - can be made modal later
     setIsSyncing(true);
     try {
       const res = await fetch(`/api/agents?id=${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete");
-      
       addLog("Affiliate deleted from system.");
-      fetchDashboardData(true); // Refresh table
+      fetchDashboardData(true);
     } catch (error) {
       console.error(error);
       addLog("Failed to delete affiliate.");
@@ -690,32 +567,20 @@ function AdminDashboard() {
     }
   };
 
-  // =====================================================
-  // 🚀 CUSTOMER REVIEWS LOGIC 
-  // =====================================================
-
   const handleAddManualReview = async () => {
     if (!manualReview.userName || !manualReview.comment) {
-      addLog("Client Alias and Feedback Structure are required!");
+      addLog("Client Alias and Feedback are required!");
       return;
     }
-    
     setIsSyncing(true);
-    addLog("Injecting manual feedback entry...");
-
     try {
       const res = await fetch("/api/reviews", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(manualReview),
       });
-
       if (!res.ok) throw new Error("Failed to inject review");
-
-      addLog("Feedback Compiled Successfully!");
-      addLog("Manual review injected into system.");
-      
-      // Reset the form
+      addLog("Manual review injected.");
       setManualReview({
         userName: "",
         comment: "",
@@ -725,8 +590,7 @@ function AdminDashboard() {
         isAdminGenerated: true,
         media: [],
       });
-      
-      fetchDashboardData(true); // Refresh table
+      fetchDashboardData(true);
     } catch (error) {
       console.error(error);
       addLog("Failed to compile review.");
@@ -735,21 +599,17 @@ function AdminDashboard() {
     }
   };
 
-  const handleUpdateReviewStatus = async (id: string, newVisibility: string| "hidden") => {
+  const handleUpdateReviewStatus = async (id: string, newVisibility: string) => {
     setIsSyncing(true);
-    addLog(`Updating review visibility to ${newVisibility}...`);
-
     try {
       const res = await fetch("/api/reviews", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, visibility: newVisibility }),
       });
-
       if (!res.ok) throw new Error("Failed to update status");
-
       addLog(`Feedback stream updated (${newVisibility}).`);
-      fetchDashboardData(true); // Refresh table
+      fetchDashboardData(true);
     } catch (error) {
       console.error(error);
       addLog("Failed to update review status.");
@@ -759,16 +619,12 @@ function AdminDashboard() {
   };
 
   const handleDeleteReview = async (id: string) => {
-    // Direct deletion for admin efficiency - can add confirmation modal later
     setIsSyncing(true);
-    addLog("Erasing feedback record...");
-
     try {
       const res = await fetch(`/api/reviews?id=${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete review");
-      
       addLog("Feedback erased from system.");
-      fetchDashboardData(true); // Refresh table
+      fetchDashboardData(true);
     } catch (error) {
       console.error(error);
       addLog("Failed to erase review.");
@@ -777,15 +633,10 @@ function AdminDashboard() {
     }
   };
 
-
-  // =====================================================
-  // RENDER
-  // =====================================================
-
   if (status === "loading") {
     return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center">
-        AUTHENTICATING...
+      <div className="min-h-screen bg-black text-white flex items-center justify-center font-mono text-xs uppercase tracking-widest">
+        Authenticating Secure Vault Node...
       </div>
     );
   }
@@ -795,7 +646,7 @@ function AdminDashboard() {
       <div className="min-h-screen bg-black text-white flex items-center justify-center">
         <button
           onClick={() => signIn("google")}
-          className="bg-[#D4AF37] text-black px-12 py-5 rounded-full font-bold tracking-widest uppercase"
+          className="bg-[#D4AF37] text-black px-12 py-5 rounded-full font-bold tracking-widest uppercase cursor-pointer hover:bg-white transition-all shadow-xl"
         >
           Admin Sign In
         </button>
@@ -804,8 +655,7 @@ function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white flex">
-      {/* BACKGROUND */}
+    <div className="min-h-screen bg-black text-white flex font-sans">
       <div className="fixed inset-0 pointer-events-none z-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:40px_40px]" />
 
       {/* SIDEBAR */}
@@ -817,8 +667,7 @@ function AdminDashboard() {
 
           <div className="overflow-hidden">
             <p className="text-[9px] text-[#00F0FF] font-bold uppercase tracking-widest">
-              <Activity size={10} className="inline animate-pulse" /> System
-              Secured
+              <Activity size={10} className="inline animate-pulse" /> System Secured
             </p>
             <h1 className="text-sm font-bold truncate">
               {session.user?.name}
@@ -826,24 +675,23 @@ function AdminDashboard() {
           </div>
         </div>
 
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+        <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
           {MODULES.map((module) => {
             const Icon = module.icon;
             return (
               <button
                 key={module.id}
                 onClick={() => setActiveTab(module.id)}
-                className={`w-full flex items-center justify-between px-4 py-4 rounded-xl text-[10px] font-bold uppercase tracking-widest ${
+                className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all cursor-pointer ${
                   activeTab === module.id
-                    ? "bg-[#D4AF37] text-black"
-                    : "text-gray-400 hover:text-white hover:bg-white/10"
+                    ? "bg-[#D4AF37] text-black shadow-lg shadow-[#D4AF37]/20"
+                    : "text-gray-400 hover:text-white hover:bg-white/5"
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <Icon size={16} />
                   {module.label}
                 </div>
-
                 {activeTab === module.id && <ChevronRight size={14} />}
               </button>
             );
@@ -853,7 +701,7 @@ function AdminDashboard() {
         <div className="p-6 border-t border-white/10">
           <button
             onClick={handleAdminLogout}
-            className="w-full py-4 text-red-500 text-[10px] font-bold uppercase tracking-widest border border-red-500/20 rounded-xl hover:bg-red-500 hover:text-white flex justify-center items-center gap-2"
+            className="w-full py-3.5 text-red-400 text-[10px] font-bold uppercase tracking-widest border border-red-500/20 rounded-xl hover:bg-red-500 hover:text-white flex justify-center items-center gap-2 transition-all cursor-pointer"
           >
             <Lock size={14} />
             Sign Out
@@ -861,9 +709,9 @@ function AdminDashboard() {
         </div>
       </aside>
 
-      {/* MAIN */}
+      {/* MAIN CONTENT AREA */}
       <main className="flex-1 min-w-0 p-4 md:p-8 lg:p-12 relative z-10 overflow-y-auto">
-        {/* MOBILE NAV */}
+        {/* MOBILE NAV TABS */}
         <div className="lg:hidden flex overflow-x-auto gap-2 pb-4 mb-6 border-b border-white/10">
           {MODULES.map((module) => {
             const Icon = module.icon;
@@ -891,27 +739,20 @@ function AdminDashboard() {
           </h2>
 
           <div className="flex gap-3">
-            <button className="p-4 bg-black border border-white/20 rounded-xl">
-              <BellRing size={18} />
-            </button>
-
             <button
               onClick={() => fetchDashboardData(false)}
-              className="px-5 py-4 bg-[#D4AF37]/10 border border-[#D4AF37]/30 rounded-xl text-[#D4AF37] flex items-center gap-2 text-xs font-bold uppercase tracking-widest"
+              className="px-5 py-3.5 bg-[#D4AF37]/10 border border-[#D4AF37]/30 rounded-xl text-[#D4AF37] hover:bg-[#D4AF37] hover:text-black flex items-center gap-2 text-xs font-bold uppercase tracking-widest transition-all cursor-pointer"
             >
               <RefreshCcw
-                size={16}
+                size={15}
                 className={isSyncing ? "animate-spin" : ""}
               />
-              Sync Data
+              Sync Telemetry
             </button>
           </div>
         </header>
 
-        {/* ================================================= */}
-        {/* TAB CONTENT */}
-        {/* ================================================= */}
-
+        {/* TAB ROUTING */}
         <AnimatePresence mode="wait">
           {activeTab === "FULL_DASHBOARD" && (
             <DashboardTab
@@ -927,6 +768,8 @@ function AdminDashboard() {
             />
           )}
 
+          {activeTab === "AI_COMMAND_CENTER" && <AiCommandCenterTab />}
+
           {activeTab === "INVENTORY" && (
             <InventoryTab
               watchForm={watchForm}
@@ -939,21 +782,18 @@ function AdminDashboard() {
             />
           )}
 
-          {activeTab === "CRM" && (
-  <CustomersCrm customers={customers} />
-)}
-{activeTab === "AMBASSADORS" && (
+          {activeTab === "CRM" && <CustomersCrm customers={customers} />}
+
+          {activeTab === "AMBASSADORS" && (
             <BrandAmbassadors
               celebs={celebs}
               newCeleb={newCeleb}
               setNewCeleb={setNewCeleb}
               handleAddCeleb={() => fetchDashboardData(true)}
-              handleDeleteCeleb={(id: string) => setCelebs(celebs.filter(c => c._id !== id))}
+              handleDeleteCeleb={(id: string) => setCelebs(celebs.filter((c) => c._id !== id))}
               PremiumUploadNode={PremiumUploadNode}
             />
           )}
-
-          
 
           {activeTab === "PAGE_BUILDER" && (
             <WebsiteBuilderTab
@@ -972,17 +812,8 @@ function AdminDashboard() {
             />
           )}
 
-          {activeTab === "AMBASSADORS" && (
-            <div className="flex flex-col items-center justify-center p-20 text-center border border-dashed border-white/20 rounded-2xl bg-white/5">
-              <Award size={48} className="text-[#D4AF37] mb-4 opacity-50" />
-              <h3 className="text-xl font-serif mb-2">Brand Ambassadors</h3>
-              <p className="text-gray-400 text-sm">Component Coming Soon. Link your ambassador components here.</p>
-            </div>
-          )}
-
           {activeTab === "SEO_ENGINE" && <SeoEngineTab />}
 
-          {/* 🚀 FIXED: Passed real functions to ReviewsTab */}
           {activeTab === "LEGAL_PAGES" && (
             <LegalPagesTab
               legalPages={legalPages}
@@ -1012,16 +843,12 @@ function AdminDashboard() {
             <SalesForceTab
               agents={agents}
               setIsAgentModalOpen={setIsAgentModalOpen}
-              handleDeleteAffiliate={handleDeleteAffiliate} 
+              handleDeleteAffiliate={handleDeleteAffiliate}
             />
           )}
-{activeTab === "COUPONS" && (
-  <CouponMarketingTab />
-)}
-    
 
+          {activeTab === "COUPONS" && <CouponMarketingTab />}
           {activeTab === "SECURITY" && <SecurityTab />}
-
           {activeTab === "WITHDRAWALS" && <WithdrawalTab />}
 
           {activeTab === "ORDER_TRACKER" && (
@@ -1036,14 +863,11 @@ function AdminDashboard() {
           )}
         </AnimatePresence>
 
-        {/* ================================================= */}
         {/* AFFILIATE / AGENT MODAL */}
-        {/* ================================================= */}
         {isAgentModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
             <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl">
               <h2 className="text-xl font-serif text-[#D4AF37] mb-4">Add New Affiliate</h2>
-              
               <div className="space-y-4">
                 <input
                   type="text"
@@ -1089,13 +913,13 @@ function AdminDashboard() {
               <div className="flex gap-3 mt-8">
                 <button
                   onClick={() => setIsAgentModalOpen(false)}
-                  className="flex-1 py-3 border border-white/20 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-white/5 transition-colors"
+                  className="flex-1 py-3 border border-white/20 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-white/5 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSaveAgent}
-                  className="flex-1 py-3 bg-[#D4AF37] text-black rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-white transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 py-3 bg-[#D4AF37] text-black rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-white transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-lg"
                 >
                   {isSyncing ? <RefreshCcw size={14} className="animate-spin" /> : null}
                   Save Affiliate

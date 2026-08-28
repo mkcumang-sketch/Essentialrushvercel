@@ -4,16 +4,40 @@ import type { SeoData } from "@/types/seo";
 export type { UserRole, SeoData };
 
 export type OrderStatus =
-  | "Pending"
+  | "ORDER_CREATED"
   | "PENDING_PAYMENT"
+  | "PAYMENT_VERIFIED"
+  | "PROCESSING"
+  | "PACKED"
+  | "DISPATCHED"
+  | "IN_TRANSIT"
+  | "OUT_FOR_DELIVERY"
+  | "DELIVERED"
+  | "CANCELLED"
+  | "FAILED"
+  | "RETURNED"
+  | "REFUNDED"
+  | "DELAYED"
+  // Legacy status support for backwards compatibility
+  | "Pending"
   | "Processing"
   | "Shipped"
   | "Delivered"
   | "Cancelled";
 
-export type PaymentStatus = "Pending" | "PENDING_PAYMENT" | "Paid" | "Failed";
+export type PaymentStatus =
+  | "PENDING"
+  | "PENDING_PAYMENT"
+  | "AUTHORIZED"
+  | "PAID"
+  | "FAILED"
+  | "REFUNDED"
+  // Legacy values
+  | "Pending"
+  | "Paid"
+  | "Failed";
 
-export type PaymentMethod = "COD" | "BANK_TRANSFER";
+export type PaymentMethod = "COD" | "BANK_TRANSFER" | "RAZORPAY" | "CARD" | "UPI";
 
 export interface IAddress {
   _id?: string;

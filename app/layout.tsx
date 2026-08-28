@@ -3,9 +3,9 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { Suspense } from "react";
 
-// 🚀 FIX: Tumhara apna CombinedProviders import karo (Path apne hisaab se adjust kar lena agar alag folder mein hai)
 import { CombinedProviders } from "@/components/Providers"; 
 import AffiliateTracker from "@/components/AffiliateTracker";
+import AiErrorBoundary from "@/components/AiErrorBoundary";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -23,16 +23,21 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         
-        {/* 🚀 Tumhara Existing Provider jo Session, Cart aur Toaster handle karega */}
+        {/* Combined Providers for Session, Cart & Notifications */}
         <CombinedProviders>
           
-          {/* 🚀 Invisible Affiliate Tracker */}
-          <Suspense fallback={null}>
-            <AffiliateTracker />
-          </Suspense>
+          {/* AI-Powered Global Error Boundary */}
+          <AiErrorBoundary>
+            
+            {/* Invisible Affiliate Referral Tracker */}
+            <Suspense fallback={null}>
+              <AffiliateTracker />
+            </Suspense>
 
-          {/* Main App Content */}
-          {children}
+            {/* Main App Storefront & Admin Content */}
+            {children}
+            
+          </AiErrorBoundary>
 
         </CombinedProviders>
         
