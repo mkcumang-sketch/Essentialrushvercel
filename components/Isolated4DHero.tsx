@@ -19,7 +19,7 @@ interface HeroProps {
   slides?: HeroSlide[];
 }
 
-const DialMark = ({ size = 14, className = "" }: { size?: number; className?: string }) => (
+const DialMark = ({ size = 12, className = "" }: { size?: number; className?: string }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
     <circle cx="12" cy="12" r="9.5" stroke="currentColor" strokeWidth="1.2" />
     <line x1="12" y1="12" x2="12" y2="6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
@@ -37,8 +37,8 @@ export default function Isolated4DHero({ slides: propSlides }: HeroProps) {
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
 
-  const rotateX = useTransform(mouseY, [-0.5, 0.5], [4, -4]);
-  const rotateY = useTransform(mouseX, [-0.5, 0.5], [-4, 4]);
+  const rotateX = useTransform(mouseY, [-0.5, 0.5], [3, -3]);
+  const rotateY = useTransform(mouseX, [-0.5, 0.5], [-3, 3]);
   const springConfig = { damping: 35, stiffness: 120, mass: 0.5 };
   const smoothRotateX = useSpring(rotateX, springConfig);
   const smoothRotateY = useSpring(rotateY, springConfig);
@@ -95,7 +95,7 @@ export default function Isolated4DHero({ slides: propSlides }: HeroProps) {
         if (e.key === "Enter" || e.key === " ") router.push(currentSlide.ctaLink || "/shop");
       }}
       aria-label="Hero Banner Carousel"
-      className="relative h-[100dvh] w-full bg-[#0B0E11] cursor-pointer overflow-hidden font-sans"
+      className="relative h-[100dvh] w-full bg-[#0B0E11] cursor-pointer overflow-hidden font-sans select-none"
     >
       <motion.div
         style={{ rotateX: smoothRotateX, rotateY: smoothRotateY, transformStyle: "preserve-3d" }}
@@ -106,7 +106,7 @@ export default function Isolated4DHero({ slides: propSlides }: HeroProps) {
           aria-hidden="true"
           animate={{ rotate: 360 }}
           transition={{ duration: 120, repeat: Infinity, ease: "linear" }}
-          className="absolute z-20 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[140vw] h-[140vw] md:w-[85vh] md:h-[85vh] rounded-full pointer-events-none opacity-30"
+          className="absolute z-20 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120vw] h-[120vw] md:w-[85vh] md:h-[85vh] rounded-full pointer-events-none opacity-25"
           style={{ border: "1px dashed rgba(212,175,55,0.25)" }}
         />
 
@@ -142,33 +142,33 @@ export default function Isolated4DHero({ slides: propSlides }: HeroProps) {
               )}
             </motion.div>
           </AnimatePresence>
-          <div className="absolute inset-0 bg-gradient-to-t from-[#0B0E11] via-black/30 to-black/50 pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#0B0E11] via-black/35 to-black/55 pointer-events-none" />
         </div>
 
-        {/* Foreground Content with Blur-to-Sharp Reveal */}
-        <div className="absolute inset-0 z-30 flex items-center justify-center text-center px-6 pointer-events-none">
+        {/* Foreground Content - Fluid Responsive Sizing */}
+        <div className="absolute inset-0 z-30 flex items-center justify-center text-center px-4 sm:px-6 md:px-10 pointer-events-none">
           <AnimatePresence mode="wait">
             <motion.div
               key={currentIndex}
-              initial={{ opacity: 0, y: 30, filter: "blur(10px)" }}
+              initial={{ opacity: 0, y: 24, filter: "blur(8px)" }}
               animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              exit={{ opacity: 0, y: -30, filter: "blur(10px)" }}
+              exit={{ opacity: 0, y: -24, filter: "blur(8px)" }}
               transition={{ duration: motionConfig.duration.slow, ease: motionConfig.ease.easeOut }}
-              className="max-w-5xl mx-auto"
+              className="max-w-4xl mx-auto w-full flex flex-col items-center"
             >
               {currentSlide.subtitle && (
-                <p className="text-[#D4AF37] text-[10px] md:text-xs font-black uppercase tracking-[12px] md:tracking-[20px] mb-6 drop-shadow-[0_0_15px_rgba(212,175,55,0.4)]">
+                <p className="text-[#D4AF37] text-[9px] sm:text-[10px] md:text-xs font-black uppercase tracking-[5px] sm:tracking-[8px] md:tracking-[16px] mb-4 sm:mb-6 drop-shadow-[0_0_12px_rgba(212,175,55,0.4)] px-2">
                   {currentSlide.subtitle}
                 </p>
               )}
 
-              <h1 className="text-5xl md:text-8xl lg:text-[140px] font-serif font-bold italic leading-none tracking-tight text-white mb-8 drop-shadow-2xl">
+              <h1 className="text-3xl sm:text-5xl md:text-7xl lg:text-8xl xl:text-9xl font-serif font-bold italic leading-[1.05] sm:leading-[0.98] tracking-tight text-white mb-6 sm:mb-8 drop-shadow-2xl max-w-[90vw]">
                 {currentSlide.heading || "Masterpiece Timepieces"}
               </h1>
 
-              <div className="inline-flex items-center gap-3 px-8 py-4 bg-white/10 hover:bg-white text-white hover:text-black rounded-full backdrop-blur-md transition-all duration-500 pointer-events-auto shadow-2xl border border-white/20">
-                <DialMark size={12} className="text-[#D4AF37]" />
-                <span className="text-[10px] font-black uppercase tracking-[0.3em]">
+              <div className="inline-flex items-center gap-2.5 px-5 sm:px-7 py-3 sm:py-3.5 bg-white/10 hover:bg-white text-white hover:text-black rounded-full backdrop-blur-md transition-all duration-300 pointer-events-auto shadow-xl border border-white/20 active:scale-95">
+                <DialMark size={11} className="text-[#D4AF37]" />
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.25em]">
                   {currentSlide.ctaText || "Explore Vault"}
                 </span>
               </div>
@@ -177,22 +177,26 @@ export default function Isolated4DHero({ slides: propSlides }: HeroProps) {
         </div>
       </motion.div>
 
-      {/* Slide Indicators - Moved outside 3D parent for pure screen-relative centering */}
+      {/* Slide Indicators - 100% Mathematically Centered & Transparent Glass Pill */}
       {slides.length > 1 && (
-        <div className="absolute bottom-6 md:bottom-10 left-1/2 -translate-x-1/2 z-40 flex items-center justify-center pointer-events-auto">
-          <div className="flex items-center gap-2.5 md:gap-3 bg-black/50 border border-white/15 px-4 md:px-6 py-2 md:py-3 rounded-full backdrop-blur-xl shadow-2xl">
+        <div 
+          className="absolute bottom-5 sm:bottom-8 md:bottom-10 inset-x-0 z-40 flex items-center justify-center pointer-events-none"
+          style={{ transform: "none" }}
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/20 backdrop-blur-md border border-white/10 shadow-lg pointer-events-auto"
+          >
             {slides.map((_, i) => (
               <button
                 key={i}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setCurrentIndex(i);
-                }}
+                type="button"
+                onClick={() => setCurrentIndex(i)}
                 aria-label={`Go to slide ${i + 1}`}
-                className={`rounded-full transition-all duration-500 cursor-pointer ${
+                className={`rounded-full transition-all duration-300 cursor-pointer ${
                   i === currentIndex
-                    ? "w-7 md:w-8 h-2 bg-[#D4AF37] shadow-[0_0_10px_rgba(212,175,55,0.8)]"
-                    : "w-2 h-2 bg-white/30 hover:bg-white/70"
+                    ? "w-6 sm:w-7 h-1.5 bg-[#D4AF37] shadow-[0_0_8px_rgba(212,175,55,0.7)]"
+                    : "w-1.5 h-1.5 bg-white/35 hover:bg-white/70"
                 }`}
               />
             ))}

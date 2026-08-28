@@ -953,13 +953,7 @@ function AdminDashboard() {
             />
           )}
 
-          {activeTab === "MARKETING" && (
-            <div className="flex flex-col items-center justify-center p-20 text-center border border-dashed border-white/20 rounded-2xl bg-white/5">
-              <Gift size={48} className="text-[#D4AF37] mb-4 opacity-50" />
-              <h3 className="text-xl font-serif mb-2">Coupons & Marketing</h3>
-              <p className="text-gray-400 text-sm">Component Coming Soon. Link your marketing components here.</p>
-            </div>
-          )}
+          
 
           {activeTab === "PAGE_BUILDER" && (
             <WebsiteBuilderTab
