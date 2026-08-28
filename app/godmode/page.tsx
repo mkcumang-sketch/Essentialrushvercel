@@ -7,6 +7,8 @@ import React, {
 } from "react";
 
 import { AnimatePresence } from "framer-motion";
+import MyrioHealthTab from "@/components/godmode/tabs_temp/MyrioHealthTab";
+import MyrioLearningTab from "@/components/godmode/tabs_temp/MyrioLearningTab";
 
 import {
   BarChart3,
@@ -29,6 +31,8 @@ import {
   Award,
   Lock,
   Tag,
+  Archive,
+  Brain,
   ChevronRight,
 } from "lucide-react";
 
@@ -43,10 +47,12 @@ import OrderTrackerTab from "@/components/godmode/tabs_temp/OrderTrackerTab";
 import SeoEngineTab from "@/components/godmode/tabs_temp/SeoEngineTab";
 import LegalPagesTab from "@/components/godmode/tabs_temp/LegalPagesTab";
 import ReviewsTab from "@/components/godmode/tabs_temp/ReviewsTab";
+import MyrioArchiveTab from "@/components/godmode/tabs_temp/MyrioArchiveTab";
 import SalesForceTab from "@/components/godmode/tabs_temp/SalesForceTab";
 import SecurityTab from "@/components/godmode/tabs_temp/SecurityTab";
 import WebsiteBuilderTab from "@/components/godmode/tabs_temp/WebsiteBuilderTab";
 import WithdrawalTab from "@/components/godmode/tabs_temp/WithdrawalTab";
+
 import AiCommandCenterTab from "@/components/godmode/tabs_temp/AiCommandCenterTab";
 
 // =====================================================
@@ -56,6 +62,7 @@ import type {
   HeroSlide,
   AboutConfig,
   UiConfig,
+
   SocialLinks,
   CorporateInfo,
   LegalPage,
@@ -72,15 +79,18 @@ import type {
 
 const MODULES = [
   { id: "FULL_DASHBOARD", icon: BarChart3, label: "Main Dashboard" },
+  { id: "MYRIO_ARCHIVE", icon: Archive, label: "MYRIO Data Lifecycle" },
   { id: "AI_COMMAND_CENTER", icon: Zap, label: "AI Command Center" },
   { id: "INVENTORY", icon: Package, label: "Products & Inventory" },
   { id: "COUPONS", label: "Coupons & Offers", icon: Tag },
   { id: "ORDER_TRACKER", icon: Truck, label: "Manage Orders" },
+  { id: "MYRIO_LEARNING", icon: Brain, label: "MYRIO Learning Center" },
   { id: "CRM", icon: Users, label: "Customers & CRM" },
   { id: "PAGE_BUILDER", icon: Layout, label: "Website Builder" },
   { id: "AMBASSADORS", icon: Award, label: "Brand Ambassadors" },
   { id: "SEO_ENGINE", icon: Globe, label: "SEO Command Center" },
   { id: "LEGAL_PAGES", icon: FileText, label: "Legal Policies" },
+  { id: "MYRIO_HEALTH", icon: Activity, label: "MYRIO Self-Health" },
   { id: "REVIEWS", icon: Star, label: "Customer Reviews" },
   { id: "SALES_FORCE", icon: LinkIcon, label: "Affiliates & Partners" },
   { id: "WITHDRAWALS", icon: Landmark, label: "Withdrawal Requests" },
@@ -769,7 +779,7 @@ function AdminDashboard() {
           )}
 
           {activeTab === "AI_COMMAND_CENTER" && <AiCommandCenterTab />}
-
+{activeTab === "MYRIO_ARCHIVE" && <MyrioArchiveTab />}
           {activeTab === "INVENTORY" && (
             <InventoryTab
               watchForm={watchForm}
@@ -783,7 +793,7 @@ function AdminDashboard() {
           )}
 
           {activeTab === "CRM" && <CustomersCrm customers={customers} />}
-
+{activeTab === "MYRIO_HEALTH" && <MyrioHealthTab />}
           {activeTab === "AMBASSADORS" && (
             <BrandAmbassadors
               celebs={celebs}
@@ -838,6 +848,7 @@ function AdminDashboard() {
               PremiumUploadNode={PremiumUploadNode}
             />
           )}
+          {activeTab === "MYRIO_LEARNING" && <MyrioLearningTab />}
 
           {activeTab === "SALES_FORCE" && (
             <SalesForceTab

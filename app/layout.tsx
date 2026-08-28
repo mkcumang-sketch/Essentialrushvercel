@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import { CombinedProviders } from "@/components/Providers"; 
 import AffiliateTracker from "@/components/AffiliateTracker";
 import AiErrorBoundary from "@/components/AiErrorBoundary";
+import AskMyrioWidget from "@/components/customer/AskMyrioWidget";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -36,6 +37,9 @@ export default function RootLayout({
 
             {/* Main App Storefront & Admin Content */}
             {children}
+
+            {/* Customer MYRIO AI Chatbot Floating Widget */}
+            <AskMyrioWidget />
             
           </AiErrorBoundary>
 
