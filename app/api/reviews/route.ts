@@ -2,15 +2,12 @@ export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
 import { NextRequest, NextResponse } from "next/server";
-import mongoose, { Model } from "mongoose";
+import mongoose, { Model, Schema } from "mongoose";
 import { getToken } from "next-auth/jwt";
 import { revalidatePath } from "next/cache";
-
 import connectDB from "@/lib/mongodb";
-
-// ======================================================
-// REVIEW INTERFACE
-// ======================================================
+import { sanitizeString } from "@/lib/sanitize";
+import { checkRateLimit, getRateLimitHeaders } from "@/lib/rate-limit";
 
 interface IReview {
   userName: string;
@@ -24,81 +21,28 @@ interface IReview {
   createdAt: Date;
 }
 
-// ======================================================
-// REVIEW SCHEMA
-// ======================================================
-
-const reviewSchema = new mongoose.Schema<IReview>(
+const reviewSchema = new Schema<IReview>(
   {
-    userName: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    userId: {
-      type: String,
-      index: true,
-      sparse: true,
-    },
-
-    comment: {
-      type: String,
-      required: true,
-      trim: true,
-      maxlength: 8000,
-    },
-
-    rating: {
-      type: Number,
-      default: 5,
-      min: 1,
-      max: 5,
-    },
-
-    product: {
-      type: String,
-      default: "GLOBAL",
-      trim: true,
-    },
-
+    userName: { type: String, required: true, trim: true },
+    userId: { type: String, index: true, sparse: true },
+    comment: { type: String, required: true, trim: true, maxlength: 8000 },
+    rating: { type: Number, default: 5, min: 1, max: 5 },
+    product: { type: String, default: "GLOBAL", trim: true },
     visibility: {
       type: String,
       enum: ["pending", "public", "hidden"],
       default: "pending",
     },
-
-    isAdminGenerated: {
-      type: Boolean,
-      default: false,
-    },
-
-    media: {
-      type: [String],
-      default: [],
-    },
-
-    createdAt: {
-      type: Date,
-      default: Date.now,
-    },
+    isAdminGenerated: { type: Boolean, default: false },
+    media: { type: [String], default: [] },
+    createdAt: { type: Date, default: Date.now },
   },
-  {
-    timestamps: false,
-  }
+  { timestamps: false }
 );
-
-// ======================================================
-// MONGOOSE MODEL
-// ======================================================
 
 const Review: Model<IReview> =
   (mongoose.models.Review as Model<IReview>) ||
   mongoose.model<IReview>("Review", reviewSchema);
-
-// ======================================================
-// AUTH TYPES
-// ======================================================
 
 interface AuthToken {
   id?: string;
@@ -108,44 +52,23 @@ interface AuthToken {
   role?: string;
 }
 
-// ======================================================
-// GET AUTH TOKEN
-// ======================================================
-
-async function getAuthToken(
-  req: NextRequest
-): Promise<AuthToken | null> {
+async function getAuthToken(req: NextRequest): Promise<AuthToken | null> {
   try {
     const token = await getToken({
       req,
       secret: process.env.NEXTAUTH_SECRET,
     });
-
-    if (!token) {
-      return null;
-    }
-
-    return token as AuthToken;
+    return token ? (token as AuthToken) : null;
   } catch (error) {
     console.error("Auth token error:", error);
     return null;
   }
 }
 
-// ======================================================
-// SUPER ADMIN CHECK
-// ======================================================
-
-async function isSuperAdminRequest(
-  req: NextRequest
-): Promise<boolean> {
+async function isSuperAdminRequest(req: NextRequest): Promise<boolean> {
   const token = await getAuthToken(req);
   return token?.role === "SUPER_ADMIN";
 }
-
-// ======================================================
-// GET REVIEWS
-// ======================================================
 
 export async function GET(req: NextRequest) {
   try {
@@ -165,11 +88,7 @@ export async function GET(req: NextRequest) {
     }
 
     const query = wantsAdminView ? {} : { visibility: "public" };
-
-    const reviews = await Review.find(query)
-      .sort({ createdAt: -1 })
-      .lean()
-      .exec();
+    const reviews = await Review.find(query).sort({ createdAt: -1 }).lean().exec();
 
     return NextResponse.json({
       success: true,
@@ -184,19 +103,26 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// ======================================================
-// CREATE REVIEW (POST)
-// ======================================================
-
 export async function POST(req: NextRequest) {
   try {
-    await connectDB();
-    const body = await req.json();
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "anonymous";
+    const rateLimit = await checkRateLimit(ip, "user");
 
+    if (!rateLimit.success) {
+      return NextResponse.json(
+        { success: false, message: "Too many attempts. Please try again shortly." },
+        { status: 429, headers: getRateLimitHeaders(rateLimit) }
+      );
+    }
+
+    await connectDB();
+    const body = await req.json().catch(() => ({}));
+
+    // Honeypot bot protection
     if (typeof body.honeyPot === "string" && body.honeyPot.trim().length > 0) {
       return NextResponse.json(
         { success: false, message: "Security check failed." },
-        { status: 400 }
+        { status: 400, headers: getRateLimitHeaders(rateLimit) }
       );
     }
 
@@ -204,7 +130,7 @@ export async function POST(req: NextRequest) {
     if (!token) {
       return NextResponse.json(
         { success: false, message: "Sign in to leave a review." },
-        { status: 401 }
+        { status: 401, headers: getRateLimitHeaders(rateLimit) }
       );
     }
 
@@ -212,20 +138,20 @@ export async function POST(req: NextRequest) {
     if (!userId) {
       return NextResponse.json(
         { success: false, message: "Unable to identify your account." },
-        { status: 401 }
+        { status: 401, headers: getRateLimitHeaders(rateLimit) }
       );
     }
 
     const userName =
       typeof body.userName === "string" && body.userName.trim().length > 0
-        ? body.userName.trim().slice(0, 100)
-        : token.name || "Member";
+        ? sanitizeString(body.userName, 100)
+        : sanitizeString(token.name, 100) || "Member";
 
-    const comment = typeof body.comment === "string" ? body.comment.trim().slice(0, 8000) : "";
+    const comment = sanitizeString(body.comment, 8000);
     if (!comment) {
       return NextResponse.json(
         { success: false, message: "Please write a review before submitting." },
-        { status: 400 }
+        { status: 400, headers: getRateLimitHeaders(rateLimit) }
       );
     }
 
@@ -236,11 +162,14 @@ export async function POST(req: NextRequest) {
 
     const product =
       typeof body.product === "string" && body.product.trim().length > 0
-        ? body.product.trim().slice(0, 200)
+        ? sanitizeString(body.product, 200)
         : "GLOBAL";
 
     const media: string[] = Array.isArray(body.media)
-      ? body.media.filter((item: unknown): item is string => typeof item === "string").slice(0, 10)
+      ? body.media
+          .filter((item: unknown): item is string => typeof item === "string")
+          .map((m: string) => sanitizeString(m, 500))
+          .slice(0, 10)
       : [];
 
     const isAdminGenerated = token.role === "SUPER_ADMIN" && body.isAdminGenerated === true;
@@ -260,7 +189,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(
       { success: true, data: newReview },
-      { status: 201 }
+      { status: 201, headers: getRateLimitHeaders(rateLimit) }
     );
   } catch (error) {
     console.error("POST Review Error:", error);
@@ -270,10 +199,6 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-
-// ======================================================
-// UPDATE REVIEW (PUT instead of PATCH to match frontend)
-// ======================================================
 
 export async function PUT(req: NextRequest) {
   try {
@@ -286,11 +211,10 @@ export async function PUT(req: NextRequest) {
     }
 
     await connectDB();
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
 
-    // 🚀 FIX: Frontend sends 'id', not 'reviewId'
-    const reviewId = typeof body.id === "string" ? body.id : "";
-    const visibility = typeof body.visibility === "string" ? body.visibility : "";
+    const reviewId = sanitizeString(body.id, 50);
+    const visibility = sanitizeString(body.visibility, 20);
 
     if (!reviewId || !mongoose.Types.ObjectId.isValid(reviewId)) {
       return NextResponse.json(
@@ -335,10 +259,6 @@ export async function PUT(req: NextRequest) {
   }
 }
 
-// ======================================================
-// DELETE REVIEW
-// ======================================================
-
 export async function DELETE(req: NextRequest) {
   try {
     const isAdmin = await isSuperAdminRequest(req);
@@ -350,10 +270,8 @@ export async function DELETE(req: NextRequest) {
     }
 
     await connectDB();
-
-    // 🚀 FIX: Frontend sends ID in the URL (?id=...), not in the body
     const { searchParams } = new URL(req.url);
-    const id = searchParams.get("id");
+    const id = sanitizeString(searchParams.get("id"), 50);
 
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(

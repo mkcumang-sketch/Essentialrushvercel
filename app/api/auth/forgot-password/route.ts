@@ -2,35 +2,56 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import User from '@/models/usertemp';
 import { sendEmail } from '@/lib/mail';
+import { checkRateLimit, getRateLimitHeaders } from '@/lib/rate-limit'; // Assuming your upstash code is here
 
 export async function POST(req: Request) {
   try {
+    // 🛡️ 1. Rate Limiting Protection (Auth Tier)
+    const ip = req.headers.get("x-forwarded-for") || "anonymous";
+    const rateLimit = await checkRateLimit(ip, "auth");
+    
+    if (!rateLimit.success) {
+      return NextResponse.json(
+        { success: false, message: "Too many password reset attempts. Please wait a minute." },
+        { status: 429, headers: getRateLimitHeaders(rateLimit) }
+      );
+    }
+
+    // 🛡️ 2. LPDoS Protection (Max 10KB)
+    const contentLength = Number(req.headers.get("content-length") || 0);
+    if (contentLength > 10 * 1024) {
+      return NextResponse.json(
+        { success: false, message: 'Payload too large.' },
+        { status: 413, headers: getRateLimitHeaders(rateLimit) }
+      );
+    }
+
     const { email } = await req.json();
 
     if (!email || typeof email !== 'string' || !email.includes('@')) {
       return NextResponse.json(
         { success: false, message: 'Please provide a valid email address.' },
-        { status: 400 }
+        { status: 400, headers: getRateLimitHeaders(rateLimit) }
       );
     }
 
     await connectDB();
 
     const cleanEmail = email.trim().toLowerCase();
-    const user = (await User.findOne({ email: cleanEmail })) as any;
+    
+    // 🛡️ 3. NoSQL Injection Prevention ($eq)
+    const user = (await User.findOne({ email: { $eq: cleanEmail } })) as any;
 
     if (!user) {
       return NextResponse.json(
         { success: false, message: 'No account found with this email.' },
-        { status: 404 }
+        { status: 404, headers: getRateLimitHeaders(rateLimit) }
       );
     }
 
-    // 1. Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); 
 
-    // 2. Direct atomic update in MongoDB
     await User.updateOne(
       { _id: user._id },
       {
@@ -41,7 +62,6 @@ export async function POST(req: Request) {
       }
     );
 
-    // 3. Luxury HTML Email Template
     const emailHtml = `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; text-align: center; padding: 40px 20px; background-color: #0A0A0A; color: #ffffff; border-radius: 16px;">
         <h2 style="color: #D4AF37; font-family: Georgia, serif; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px;">Essential Rush</h2>
@@ -59,13 +79,12 @@ export async function POST(req: Request) {
       </div>
     `;
 
-    // 4. Send Email via Mailer Service
     await sendEmail(cleanEmail, "Password Reset Vault Access - Essential Rush", emailHtml);
 
-    return NextResponse.json({
-      success: true,
-      message: 'OTP has been dispatched to your email.',
-    });
+    return NextResponse.json(
+      { success: true, message: 'OTP has been dispatched to your email.' },
+      { status: 200, headers: getRateLimitHeaders(rateLimit) }
+    );
 
   } catch (error: any) {
     console.error("Forgot Password Error:", error);

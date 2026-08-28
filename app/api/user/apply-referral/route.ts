@@ -1,43 +1,94 @@
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 
-import  connectDB from "@/lib/mongodb";
-import User from "@/models/usertemp";
+import { NextResponse } from 'next/server';
+import mongoose from 'mongoose';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import User from '@/models/usertemp';
+import connectDB from '@/lib/mongodb';
+import { sanitizeString, escapeRegex } from '@/lib/sanitize';
+import { sendReferralRewardEmail } from '@/lib/mail';
+
+const UserModel = User as mongoose.Model<any>;
 
 export async function POST(req: Request) {
-    try {
-        const { referralCodeUsed, currentUserId } = await req.json();
-        await connectDB();
+  try {
+    await connectDB();
+    const session = await getServerSession(authOptions);
+    const userId = session?.user?.id;
 
-        // 1. Find the owner of the code (The Referrer) - SECURITY: Exclude sensitive fields
-        const referrer = await User.findOne({ myReferralCode: referralCodeUsed.toUpperCase() }).select('-password -__v');
-        
-        if (!referrer) return Response.json({ error: "That referral code is not valid." }, { status: 404 });
-        if (referrer._id.toString() === currentUserId) return Response.json({ error: "You cannot use your own code." }, { status: 400 });
-
-        // 2. Give ₹100 to the Referrer (User A)
-        referrer.walletPoints += 100;
-        referrer.totalEarned += 100;
-        
-        // 3. Optional: Add a notification to the Referrer's schema
-        referrer.notifications.push({
-    title: "Referral Reward!",
-    desc: "Someone used your code.",
-    unread: true,
-    time: new Date() // 🚀 Ye line add karni hai
-});
-        
-        await referrer.save();
-
-        // 4. Update the New User (User B) to track who referred them
-        await User.findByIdAndUpdate(currentUserId, { referredBy: referralCodeUsed.toUpperCase() });
-
-        return Response.json({ 
-            success: true, 
-            discount: 500, // User B gets ₹500 flat discount on current order
-            message: "Referral saved! Your friend got their reward."
-        });
-    } catch (err) {
-        return Response.json({ error: "Something went wrong. Try again." }, { status: 500 });
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+      return NextResponse.json({ success: false, error: "Please sign in first." }, { status: 401 });
     }
+
+    const body = await req.json();
+    const referralCode = sanitizeString(body?.referralCode, 30).toUpperCase();
+
+    if (!referralCode) {
+      return NextResponse.json({ success: false, error: "Referral code is required." }, { status: 400 });
+    }
+
+    const currentUser = await UserModel.findById(userId).select('myReferralCode referredBy walletPoints name').lean() as any;
+    if (!currentUser) {
+      return NextResponse.json({ success: false, error: "User not found." }, { status: 404 });
+    }
+
+    if (currentUser.myReferralCode?.toUpperCase() === referralCode) {
+      return NextResponse.json({ success: false, error: "You cannot use your own referral code." }, { status: 400 });
+    }
+
+    if (currentUser.referredBy) {
+      return NextResponse.json({ success: false, error: "You have already redeemed a referral code." }, { status: 400 });
+    }
+
+    const safeRegex = new RegExp(`^${escapeRegex(referralCode)}$`, 'i');
+    const referrer = await UserModel.findOne({ myReferralCode: safeRegex }).select('_id name email').lean() as any;
+
+    if (!referrer) {
+      return NextResponse.json({ success: false, error: "Invalid or nonexistent referral code." }, { status: 404 });
+    }
+
+    // 🛡️ Atomic check guarantees single redemption per user
+    const updatedUser = await UserModel.findOneAndUpdate(
+      {
+        _id: new mongoose.Types.ObjectId(userId),
+        referredBy: { $exists: false },
+      },
+      {
+        $set: { referredBy: referralCode },
+        $inc: { walletPoints: 50 },
+        $push: {
+          notifications: {
+            title: "🎁 Referral Bonus Applied!",
+            desc: "₹500 discount unlocked on your acquisition.",
+            unread: true,
+            time: new Date(),
+          },
+        },
+      },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return NextResponse.json({ success: false, error: "Referral already applied." }, { status: 400 });
+    }
+
+    if (referrer.email) {
+      sendReferralRewardEmail(referrer.email, referrer.name || 'Collector', currentUser.name || 'Member', 100).catch(() => {});
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Referral code applied!",
+      data: {
+        discount: 500,
+        referralCode,
+        newWalletBalance: updatedUser.walletPoints,
+      },
+    });
+  } catch (error) {
+    console.error("Referral Apply Error:", error);
+    return NextResponse.json({ success: false, error: "Could not apply code." }, { status: 500 });
+  }
 }

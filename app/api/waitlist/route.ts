@@ -8,10 +8,8 @@ import connectDB from "@/lib/mongodb";
 import Lead from "@/models/Lead";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-
-// ======================================================
-// TYPES
-// ======================================================
+import { sanitizeString, sanitizePhone } from "@/lib/sanitize";
+import { checkRateLimit, getRateLimitHeaders } from "@/lib/rate-limit";
 
 interface ICartItem {
   productId: string;
@@ -20,198 +18,85 @@ interface ICartItem {
 
 interface ILead {
   _id?: mongoose.Types.ObjectId;
-
   phone?: string;
-
-  userId?:
-    | string
-    | mongoose.Types.ObjectId;
-
+  userId?: string | mongoose.Types.ObjectId;
   cartItems?: ICartItem[];
-
   status?: string;
-
   lastActive?: Date;
-
   createdAt?: Date;
-
   updatedAt?: Date;
-
   [key: string]: unknown;
 }
 
-// ======================================================
-// TYPED LEAD MODEL
-// ======================================================
-//
-// This fixes Mongoose TypeScript errors around:
-//
-// Lead.create()
-// Lead.find()
-// Lead.findOne()
-// Lead.findOneAndUpdate()
-//
-// ======================================================
+const LeadModel = (Lead as unknown as Model<ILead>) || mongoose.model<ILead>("Lead", new mongoose.Schema({}, { strict: false }));
 
-const LeadModel =
-  Lead as unknown as Model<ILead>;
-
-// ======================================================
-// POST - JOIN WAITLIST
-// ======================================================
-
-export async function POST(
-  req: Request
-) {
+export async function POST(req: Request) {
   try {
-    // ==================================================
-    // 1. CONNECT DATABASE
-    // ==================================================
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "anonymous";
+    const rateLimit = await checkRateLimit(ip, "user");
 
-    await connectDB();
-
-    // ==================================================
-    // 2. GET SESSION
-    // ==================================================
-
-    const session =
-      await getServerSession(
-        authOptions
-      );
-
-    // ==================================================
-    // 3. READ REQUEST BODY
-    // ==================================================
-
-    const body = await req.json();
-
-    const productId =
-      typeof body.productId === "string"
-        ? body.productId.trim()
-        : "";
-
-    const productName =
-      typeof body.productName === "string"
-        ? body.productName.trim()
-        : "";
-
-    // ==================================================
-    // 4. VALIDATE PRODUCT ID
-    // ==================================================
-
-    if (!productId) {
+    if (!rateLimit.success) {
       return NextResponse.json(
-        {
-          success: false,
-          error:
-            "Product ID is required",
-        },
-        {
-          status: 400,
-        }
+        { success: false, error: "Too many waitlist submissions. Try again later." },
+        { status: 429, headers: getRateLimitHeaders(rateLimit) }
       );
     }
 
-    // ==================================================
-    // 5. GET USER INFORMATION
-    // ==================================================
+    await connectDB();
+    const session = await getServerSession(authOptions);
+    const body = await req.json().catch(() => ({}));
 
-    const sessionUser =
-      session?.user;
+    const productId = sanitizeString(body.productId, 100);
+    const productName = sanitizeString(body.productName, 150);
 
-    const userId =
-      sessionUser?.id || undefined;
+    if (!productId) {
+      return NextResponse.json(
+        { success: false, error: "Product ID is required" },
+        { status: 400, headers: getRateLimitHeaders(rateLimit) }
+      );
+    }
 
-    // ==================================================
-    // PHONE
-    // ==================================================
-    //
-    // Your NextAuth session may not have "phone"
-    // in its TypeScript type.
-    //
-    // Therefore we safely read it here.
-    // ==================================================
+    const sessionUser = session?.user;
+    const userId = sessionUser?.id || undefined;
 
-    const phone =
-      typeof (
-        sessionUser as
-          | (typeof sessionUser & {
-              phone?: unknown;
-            })
-          | null
-          | undefined
-      )?.phone === "string"
-        ? (
-            sessionUser as {
-              phone?: string;
-            }
-          ).phone?.trim() || "N/A"
-        : "N/A";
+    const rawPhone =
+      typeof (sessionUser as any)?.phone === "string"
+        ? (sessionUser as any).phone
+        : typeof body.phone === "string"
+        ? body.phone
+        : "";
 
-    // ==================================================
-    // 6. CREATE WAITLIST ENTRY
-    // ==================================================
+    const phone = sanitizePhone(rawPhone) || "N/A";
 
-    const newWaitlistEntry =
-      await LeadModel.create({
-        phone,
-
-        ...(userId
-          ? {
-              userId,
-            }
-          : {}),
-
-        cartItems: [
-          {
-            productId,
-            productName:
-              productName ||
-              undefined,
-          },
-        ],
-
-        status: "PENDING",
-
-        lastActive: new Date(),
-      });
-
-    // ==================================================
-    // 7. SUCCESS RESPONSE
-    // ==================================================
+    const newWaitlistEntry = await LeadModel.create({
+      phone,
+      ...(userId ? { userId } : {}),
+      cartItems: [
+        {
+          productId,
+          productName: productName || undefined,
+        },
+      ],
+      status: "PENDING",
+      lastActive: new Date(),
+    });
 
     return NextResponse.json(
       {
         success: true,
-
-        message:
-          "You have been added to the exclusive waitlist. We will contact you soon.",
-
+        message: "You have been added to the exclusive waitlist. We will contact you soon.",
         data: newWaitlistEntry,
       },
-      {
-        status: 200,
-      }
+      { status: 200, headers: getRateLimitHeaders(rateLimit) }
     );
   } catch (error: unknown) {
-    // ==================================================
-    // 8. ERROR HANDLING
-    // ==================================================
-
-    console.error(
-      "Waitlist API Error:",
-      error
-    );
-
+    console.error("Waitlist API Error:", error);
     return NextResponse.json(
       {
         success: false,
-        error:
-          "Failed to join waitlist. Please try again.",
+        error: "Failed to join waitlist. Please try again.",
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }

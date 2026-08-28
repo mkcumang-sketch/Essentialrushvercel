@@ -34,6 +34,24 @@ declare module "next-auth/jwt" {
 export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60, // 30 Days
+  },
+
+  // 🛡️ CSRF & Session Hijacking Cookies Defense
+  useSecureCookies: process.env.NODE_ENV === "production",
+  cookies: {
+    sessionToken: {
+      name:
+        process.env.NODE_ENV === "production"
+          ? "__Secure-next-auth.session-token"
+          : "next-auth.session-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
   },
 
   providers: [
@@ -53,8 +71,8 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         await connectDB();
 
-        const identifier = (credentials?.phone || credentials?.email || "").trim();
-        const rawPassword = credentials?.password || "";
+        const identifier = String(credentials?.phone || credentials?.email || "").trim();
+        const rawPassword = String(credentials?.password || "");
 
         if (!identifier || !rawPassword) {
           throw new Error("Please enter your Phone number/Email and password.");
@@ -80,10 +98,10 @@ export const authOptions: NextAuthOptions = {
           };
         }
 
-        // Standard Database Query
+        // Safe NoSQL Query with $eq
         const query = isEmail
-          ? { email: identifier.toLowerCase() }
-          : { phone: cleanPhone };
+          ? { email: { $eq: identifier.toLowerCase() } }
+          : { phone: { $eq: cleanPhone } };
 
         const user = await User.findOne(query).select("+password").exec();
 
@@ -113,19 +131,17 @@ export const authOptions: NextAuthOptions = {
 
   callbacks: {
     async jwt({ token, user, account }) {
-      // 1. Initial Login from Credentials
       if (user) {
         token.id = user.id;
         token.role = (user as any).role || "USER";
         token.phone = (user as any).phone || "";
       }
 
-      // 2. Google OAuth Profile Sync & Auto User Creation
       if (account?.provider === "google" && token.email) {
         await connectDB();
         const cleanEmail = token.email.toLowerCase().trim();
 
-        let dbUser = await User.findOne({ email: cleanEmail });
+        let dbUser = await User.findOne({ email: { $eq: cleanEmail } });
 
         if (!dbUser) {
           dbUser = await User.create({
@@ -141,7 +157,6 @@ export const authOptions: NextAuthOptions = {
         token.phone = dbUser.phone || "";
       }
 
-      // 3. Dynamic Godmode Role Override (for Google OAuth and Credentials)
       const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
       const tokenEmail = token.email?.trim().toLowerCase();
 

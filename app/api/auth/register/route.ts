@@ -5,12 +5,21 @@ import bcrypt from "bcryptjs";
 
 export async function POST(req: Request) {
   try {
-    await connectDB();
+    // 🛡️ 1. LPDoS Protection: Payload size check (Max 10KB)
+    const contentLength = Number(req.headers.get("content-length") || 0);
+    if (contentLength > 10 * 1024) {
+      return NextResponse.json(
+        { success: false, error: "Payload too large." },
+        { status: 413 }
+      );
+    }
+
     const body = await req.json();
-    const { name, password } = body;
-    
-    // Check if input is passed as 'phone', 'email', or generic identifier
-    const rawInput = (body.phone || body.email || "").trim();
+
+    // 🛡️ 2. NoSQL Injection & Type Safety: Force primitive strings
+    const name = String(body?.name || "").trim().slice(0, 60);
+    const rawInput = String(body?.phone || body?.email || "").trim();
+    const password = String(body?.password || "");
 
     if (!rawInput) {
       return NextResponse.json(
@@ -19,9 +28,9 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!password || password.length < 6) {
+    if (!password || password.length < 6 || password.length > 128) {
       return NextResponse.json(
-        { success: false, error: "Password must be at least 6 characters long." },
+        { success: false, error: "Password must be between 6 and 128 characters." },
         { status: 400 }
       );
     }
@@ -31,18 +40,25 @@ export async function POST(req: Request) {
     let userPhone: string | null = null;
 
     if (isEmail) {
-      userEmail = rawInput.toLowerCase();
+      userEmail = rawInput.toLowerCase().slice(0, 100);
     } else {
-      userPhone = rawInput.replace(/[^\d+]/g, "");
-      // Agar user ne phone se register kiya hai, toh schema requirement satisfy karne ke liye temporary unique email assign karein
+      userPhone = rawInput.replace(/[^\d+]/g, "").slice(0, 15);
+      if (!userPhone) {
+        return NextResponse.json(
+          { success: false, error: "Invalid phone number format." },
+          { status: 400 }
+        );
+      }
       userEmail = `${userPhone}@vault.essentialrush.com`;
     }
 
-    // Check if user already exists
+    await connectDB();
+
+    // 🛡️ 3. Safe Query with $eq operators to prevent query object injection
     const existingUser = await User.findOne({
       $or: [
-        { email: userEmail },
-        ...(userPhone ? [{ phone: userPhone }] : []),
+        { email: { $eq: userEmail } },
+        ...(userPhone ? [{ phone: { $eq: userPhone } }] : []),
       ],
     });
 
@@ -56,7 +72,7 @@ export async function POST(req: Request) {
     const hashedPassword = await bcrypt.hash(password, 12);
 
     const newUser = await User.create({
-      name: name?.trim() || "Vault Member",
+      name: name || "Vault Member",
       email: userEmail,
       phone: userPhone,
       password: hashedPassword,
@@ -67,7 +83,7 @@ export async function POST(req: Request) {
       success: true,
       message: "Account created successfully. Please log in.",
       user: {
-        id: newUser._id,
+        id: newUser._id.toString(),
         name: newUser.name,
         email: newUser.email,
         phone: newUser.phone,
@@ -76,7 +92,7 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.error("Registration Error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Internal server error." },
+      { success: false, error: "Internal server error. Please try again." },
       { status: 500 }
     );
   }

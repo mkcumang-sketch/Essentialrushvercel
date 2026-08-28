@@ -5,39 +5,41 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from '@/lib/auth';
 import User from "@/models/usertemp";
+import connectDB from "@/lib/mongodb";
 import mongoose from "mongoose";
+import { sanitizeString } from "@/lib/sanitize";
 
 export async function POST(req: Request) {
-    try {
-        // 1. Check if user is legally logged in
-        const session = await getServerSession(authOptions);
-        if (!session || !session.user) {
-            return NextResponse.json({ error: "Please sign in." }, { status: 401 });
-        }
+  try {
+    const session = await getServerSession(authOptions);
+    const userId = session?.user?.id;
 
-        const { phone } = await req.json();
-        if (!phone || phone.length < 10) {
-            return NextResponse.json({ error: "Please enter a valid phone number" }, { status: 400 });
-        }
-
-        // 2. Connect to DB
-        if (mongoose.connection.readyState < 1) {
-            await mongoose.connect(process.env.MONGODB_URI as string);
-        }
-
-        // 3. Check if someone else is already using this phone number (SECURITY: Exclude sensitive fields)
-        const existingPhone = await User.findOne({ phone }).select('-password -__v');
-        if (existingPhone) {
-            return NextResponse.json({ error: "This phone number is already registered!" }, { status: 400 });
-        }
-
-        // 4. Update the current user's phone number
-        await User.findByIdAndUpdate((session.user as any).id, { phone });
-
-        return NextResponse.json({ success: true, message: "Phone number saved." });
-
-    } catch (error) {
-        console.error("Update Phone Error:", error);
-        return NextResponse.json({ error: "Something went wrong. Try again." }, { status: 500 });
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+      return NextResponse.json({ success: false, error: "Please sign in." }, { status: 401 });
     }
+
+    const body = await req.json();
+    const cleanPhone = sanitizeString(body?.phone, 20).replace(/[^\d+]/g, '');
+
+    if (!cleanPhone || cleanPhone.length < 10) {
+      return NextResponse.json({ success: false, error: "Please enter a valid phone number." }, { status: 400 });
+    }
+
+    await connectDB();
+
+    const existingPhone = await User.findOne({
+      phone: { $eq: cleanPhone },
+      _id: { $ne: new mongoose.Types.ObjectId(userId) },
+    }).select('_id').lean();
+
+    if (existingPhone) {
+      return NextResponse.json({ success: false, error: "This phone number is registered with another account." }, { status: 409 });
+    }
+
+    await User.findByIdAndUpdate(userId, { $set: { phone: cleanPhone } });
+    return NextResponse.json({ success: true, message: "Phone number updated successfully.", phone: cleanPhone });
+  } catch (error) {
+    console.error("Update Phone Error:", error);
+    return NextResponse.json({ success: false, error: "Internal Server Error." }, { status: 500 });
+  }
 }

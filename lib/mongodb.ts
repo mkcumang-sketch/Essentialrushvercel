@@ -39,11 +39,10 @@ export default async function connectDB(): Promise<typeof mongoose> {
 
   if (!uri) {
     throw new MongoConnectionError(
-      "MONGODB_URI is not defined. Add it to .env.local (see .env.local.example)."
+      "MONGODB_URI is not defined. Add it to .env.local."
     );
   }
 
-  // Check if connection is already established
   if (cached.conn && mongoose.connection.readyState === 1) {
     return cached.conn;
   }

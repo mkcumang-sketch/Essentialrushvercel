@@ -1,97 +1,64 @@
 import { NextRequest, NextResponse } from "next/server";
 import connectDB from "@/lib/mongodb";
+import { Order } from "@/models/Order";
 import mongoose, { Model } from "mongoose";
+import { sanitizeString, escapeRegex } from "@/lib/sanitize";
+import { checkRateLimit, getRateLimitHeaders } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
-// ======================================================
-// ORDER TYPES
-// ======================================================
-
-interface IOrderItem {
-  name?: string;
-  title?: string;
-  [key: string]: unknown;
-}
-
-interface ICustomer {
-  email?: string;
-  [key: string]: unknown;
-}
-
-interface IShippingData {
-  email?: string;
-  [key: string]: unknown;
-}
-
-interface IShippingAddress {
-  email?: string;
-  [key: string]: unknown;
-}
-
-interface IOrder {
-  _id: mongoose.Types.ObjectId;
-
-  orderId?: string;
-  trackingId?: string;
-  status?: string;
-  totalAmount?: number;
-  createdAt?: Date;
-
-  items?: IOrderItem[];
-
-  customer?: ICustomer;
-  shippingData?: IShippingData;
-  shippingAddress?: IShippingAddress;
-}
-
-// ======================================================
-// API ROUTE HANDLER (This was missing)
-// ======================================================
+const OrderModel =
+  (Order || mongoose.models.Order || mongoose.model("Order", new mongoose.Schema({}, { strict: false }))) as Model<any>;
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. Connect to Database
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "anonymous";
+    const rateLimit = await checkRateLimit(ip, "user");
+
+    if (!rateLimit.success) {
+      return NextResponse.json(
+        { error: "Too many tracking attempts. Please slow down." },
+        { status: 429, headers: getRateLimitHeaders(rateLimit) }
+      );
+    }
+
     await connectDB();
+    const body = await request.json().catch(() => ({}));
+    const rawTrackingId = sanitizeString(body.trackingId || body.orderId, 100);
 
-    // 2. Parse request body
-    const body = await request.json();
-    const { trackingId } = body;
-
-    if (!trackingId) {
+    if (!rawTrackingId) {
       return NextResponse.json(
-        { error: "Tracking ID is required" },
-        { status: 400 }
+        { error: "Tracking ID or Order ID is required." },
+        { status: 400, headers: getRateLimitHeaders(rateLimit) }
       );
     }
 
-    // 3. Find order in database
-    // Ensure your Order model is imported or access it via mongoose.models
-    const Order = mongoose.models.Order; 
-    
-    if (!Order) {
-      return NextResponse.json(
-        { error: "Order model not found. Please ensure it is initialized." },
-        { status: 500 }
-      );
-    }
+    const safeRegex = new RegExp(`^${escapeRegex(rawTrackingId)}$`, "i");
 
-    const order = await Order.findOne({ trackingId }).lean() as IOrder | null;
+    const order = await OrderModel.findOne({
+      $or: [
+        { trackingId: safeRegex },
+        { orderId: safeRegex },
+        ...(mongoose.Types.ObjectId.isValid(rawTrackingId)
+          ? [{ _id: new mongoose.Types.ObjectId(rawTrackingId) }]
+          : []),
+      ],
+    })
+      .select("orderId trackingId status totalAmount createdAt items shippingData customer")
+      .lean();
 
     if (!order) {
       return NextResponse.json(
-        { error: "Order not found" },
-        { status: 404 }
+        { error: "Order not found." },
+        { status: 404, headers: getRateLimitHeaders(rateLimit) }
       );
     }
 
-    // 4. Return the order data
     return NextResponse.json(
       { success: true, data: order },
-      { status: 200 }
+      { status: 200, headers: getRateLimitHeaders(rateLimit) }
     );
-
   } catch (error) {
     console.error("Order tracking error:", error);
     return NextResponse.json(
