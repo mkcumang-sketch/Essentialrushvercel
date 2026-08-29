@@ -536,7 +536,70 @@ function AdminDashboard() {
       setIsSyncing(false);
     }
   };
+// Inside AdminDashboard function in app/godmode/page.tsx
 
+  const handleSaveProduct = async () => {
+    try {
+      setIsSyncing(true);
+      const res = await fetch("/api/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(watchForm),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Save failed");
+      
+      addLog(`Product "${watchForm.name}" synchronized.`);
+      // Reset form
+      setWatchForm({
+        name: "",
+        brand: "",
+        category: "Investment Grade",
+        price: "",
+        offerPrice: "",
+        stock: "",
+        imageUrl: "",
+        images: ["", "", "", "", "", "", ""],
+        videoUrl: "",
+        model3DUrl: "",
+        description: "",
+        seoTags: "",
+        specifications: "",
+        priority: 0,
+        badge: "New Arrival",
+        amazonDetails: [{ key: "Dial Color", value: "Black" }],
+        vipVaultKey: "",
+        vipDiscount: "",
+        transitFee: "0",
+        taxPercentage: "18",
+        taxInclusive: true,
+        seo: { metaTitle: "", metaDescription: "", focusKeyword: "", slug: "", noindex: false, imageAltTexts: {} },
+      });
+      await fetchDashboardData(true);
+    } catch (err: any) {
+      console.error(err);
+      addLog(`Error: ${err.message}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleDeleteProduct = async (id: string) => {
+    try {
+      setIsSyncing(true);
+      const res = await fetch(`/api/products?id=${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Delete failed");
+      
+      addLog("Product removed from vault catalog.");
+      await fetchDashboardData(true);
+    } catch (err: any) {
+      console.error(err);
+      addLog(`Error: ${err.message}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
   const handleSaveAgent = async () => {
     if (!agentForm.name || !agentForm.code) {
       addLog("Name and Code are required!");
@@ -781,16 +844,16 @@ function AdminDashboard() {
           {activeTab === "AI_COMMAND_CENTER" && <AiCommandCenterTab />}
 {activeTab === "MYRIO_ARCHIVE" && <MyrioArchiveTab />}
           {activeTab === "INVENTORY" && (
-            <InventoryTab
-              watchForm={watchForm}
-              setWatchForm={setWatchForm}
-              handleSaveProduct={async () => {}}
-              liveWatches={liveWatches}
-              handleDeleteProduct={async () => {}}
-              PremiumUploadNode={PremiumUploadNode}
-              setIsImageUploading={setIsImageUploading}
-            />
-          )}
+  <InventoryTab
+    watchForm={watchForm}
+    setWatchForm={setWatchForm}
+    handleSaveProduct={handleSaveProduct}
+    liveWatches={liveWatches}
+    handleDeleteProduct={handleDeleteProduct}
+    PremiumUploadNode={PremiumUploadNode}
+    setIsImageUploading={setIsImageUploading}
+  />
+)}
 
           {activeTab === "CRM" && <CustomersCrm customers={customers} />}
 {activeTab === "MYRIO_HEALTH" && <MyrioHealthTab />}

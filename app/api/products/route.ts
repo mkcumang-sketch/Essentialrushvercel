@@ -1,94 +1,131 @@
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
-export const revalidate = 0;
 
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { revalidatePath } from "next/cache";
-import connectDB from "@/lib/mongodb";
+import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import connectDB from "@/lib/mongodb";
 import { Product } from "@/models/Product";
-import { handleError } from "@/lib/error-handler";
-import { sanitizeString } from "@/lib/sanitize";
-import { emitAiAlert, emitAiAuditLog } from "@/lib/ai-telemetry";
+import mongoose from "mongoose";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     await connectDB();
-    const products = await Product.find({}).sort({ priority: -1, createdAt: -1 }).lean();
-    return NextResponse.json({ success: true, data: products }, { status: 200 });
-  } catch (error) {
-    const err = handleError(error);
-    return NextResponse.json({ success: false, error: err.message }, { status: err.statusCode || 500 });
+    const ProductModel = Product as mongoose.Model<any>;
+    const products = await ProductModel.find({}).sort({ priority: -1, createdAt: -1 }).lean();
+    return NextResponse.json({ success: true, data: products });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    const userRole = (session?.user as any)?.role;
-    const userEmail = session?.user?.email;
+    const role = (session?.user as any)?.role;
 
-    if (!session?.user || userRole !== "SUPER_ADMIN") {
-      return NextResponse.json({ success: false, error: "Forbidden: SuperAdmin required." }, { status: 403 });
-    }
-
-    const body = await req.json();
-    const name = sanitizeString(body.name, 150);
-    const brand = sanitizeString(body.brand || "Essential Rush", 100);
-    const price = Number(body.price);
-    const stock = Number(body.stock || 0);
-
-    if (!name || !Number.isFinite(price) || price <= 0) {
-      return NextResponse.json({ success: false, error: "Valid name and positive price are required." }, { status: 400 });
-    }
-
-    if (!Array.isArray(body.images) || body.images.filter(Boolean).length === 0) {
-      return NextResponse.json({ success: false, error: "At least one product image is required." }, { status: 400 });
+    if (!session || role !== "SUPER_ADMIN") {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
     await connectDB();
-    const product = await Product.create({
-      ...body,
+    const body = await req.json();
+    const ProductModel = Product as mongoose.Model<any>;
+
+    const {
+      _id,
       name,
       brand,
+      category,
       price,
+      offerPrice,
       stock,
-    });
+      imageUrl,
+      images,
+      priority,
+      badge,
+      description,
+      amazonDetails,
+      seo,
+    } = body;
 
-    // 🛡️ Telemetry: Log creation & check stock threshold
-    emitAiAuditLog({
-      agentName: "Inventory Agent",
-      requestedOperation: "CREATE_PRODUCT_ASSET",
-      decision: `Published new timepiece '${name}' (${brand}) at ₹${price.toLocaleString("en-IN")}.`,
-      toolUsed: "Products-API-Post",
-      permissionLevel: "APPROVAL",
-      executedBy: userEmail || "SUPER_ADMIN",
-      riskScore: 0,
-      status: "SUCCESS",
-      resultSummary: `Product ID: ${product._id}, Initial Stock: ${stock}`,
-    });
+    if (!name || !brand || !price) {
+      return NextResponse.json({ success: false, error: "Missing required product fields" }, { status: 400 });
+    }
 
-    if (stock <= 2) {
-      emitAiAlert({
-        category: "INVENTORY",
-        severity: "LOW",
-        title: `Low Initial Stock for ${name}`,
-        description: `Product created with only ${stock} units.`,
-        impact: "Early depletion warning for newly published timepiece.",
-        aiAnalysis: "Product added with low initial inventory.",
-        recommendedAction: "Verify if additional units are available in vault reserve.",
-        affectedEntityId: product._id.toString(),
+    let savedProduct;
+    if (_id && mongoose.Types.ObjectId.isValid(_id)) {
+      savedProduct = await ProductModel.findByIdAndUpdate(
+        _id,
+        {
+          $set: {
+            name,
+            brand,
+            category: category || "Investment Grade",
+            price: Number(price),
+            offerPrice: Number(offerPrice) || Number(price),
+            stock: Number(stock) || 0,
+            imageUrl: imageUrl || (images && images[0]) || "",
+            images: Array.isArray(images) ? images.filter(Boolean) : [],
+            priority: Number(priority) || 0,
+            badge: badge || "",
+            description: description || "",
+            amazonDetails: amazonDetails || [],
+            seo: seo || {},
+            isActive: true,
+          },
+        },
+        { new: true, upsert: true }
+      );
+    } else {
+      savedProduct = await ProductModel.create({
+        name,
+        brand,
+        category: category || "Investment Grade",
+        price: Number(price),
+        offerPrice: Number(offerPrice) || Number(price),
+        stock: Number(stock) || 0,
+        imageUrl: imageUrl || (images && images[0]) || "",
+        images: Array.isArray(images) ? images.filter(Boolean) : [],
+        priority: Number(priority) || 0,
+        badge: badge || "",
+        description: description || "",
+        amazonDetails: amazonDetails || [],
+        seo: seo || {},
+        isActive: true,
       });
     }
 
-    revalidatePath("/");
-    revalidatePath("/shop");
-    revalidatePath("/godmode");
+    return NextResponse.json({ success: true, data: savedProduct });
+  } catch (error: any) {
+    console.error("Product Save API Error:", error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
 
-    return NextResponse.json({ success: true, data: product }, { status: 201 });
-  } catch (error) {
-    const err = handleError(error);
-    return NextResponse.json({ success: false, error: err.message }, { status: err.statusCode || 500 });
+export async function DELETE(req: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    const role = (session?.user as any)?.role;
+
+    if (!session || role !== "SUPER_ADMIN") {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    await connectDB();
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return NextResponse.json({ success: false, error: "Invalid product ID" }, { status: 400 });
+    }
+
+    const ProductModel = Product as mongoose.Model<any>;
+    await ProductModel.findByIdAndDelete(id);
+
+    return NextResponse.json({ success: true, message: "Product deleted permanently" });
+  } catch (error: any) {
+    console.error("Product Delete API Error:", error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
