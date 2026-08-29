@@ -19,9 +19,6 @@ import {
   ArrowRight
 } from "lucide-react";
 
-// =========================================================
-// STRICT INTERFACES (NO 'any')
-// =========================================================
 export interface LegalPage {
   slug: string;
   title: string;
@@ -128,12 +125,11 @@ export default function Footer({
         )}
       </AnimatePresence>
 
-      {/* Subtle Ambient Radial Lighting */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(212,175,55,0.06),transparent_50%)] pointer-events-none" />
 
       <div className="max-w-[1600px] mx-auto px-6 md:px-16 lg:px-20 relative z-10">
         
-        {/* TOP SECTION: NEWSLETTER / VIP DISPATCH */}
+        {/* VIP NEWSLETTER */}
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center border-b border-white/10 pb-16 md:pb-20 mb-16 md:mb-20 gap-10">
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.4em] text-[#D4AF37] mb-3">
@@ -162,7 +158,7 @@ export default function Footer({
             <button
               type="submit"
               disabled={isSubscribing}
-              className="w-full sm:w-auto bg-[#D4AF37] hover:bg-white text-black font-black uppercase tracking-[0.2em] text-[10px] px-8 py-4 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 shrink-0"
+              className="w-full sm:w-auto bg-[#D4AF37] hover:bg-white text-black font-black uppercase tracking-[0.2em] text-[10px] px-8 py-4 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 shrink-0 cursor-pointer"
             >
               {isSubscribing ? (
                 <Loader2 size={16} className="animate-spin" />
@@ -175,7 +171,7 @@ export default function Footer({
           </form>
         </div>
 
-        {/* MIDDLE SECTION: NAVIGATION & CONTACT */}
+        {/* NAVIGATION & LEGAL PAGES */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-12 md:gap-16 mb-20 text-left">
           {/* Shop Column */}
           <nav aria-label="Shop Navigation">
@@ -206,7 +202,7 @@ export default function Footer({
             </ul>
           </nav>
 
-          {/* Concierge & Help Column */}
+          {/* Concierge */}
           <nav aria-label="Support Navigation">
             <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-[#D4AF37] mb-8">
               Concierge
@@ -235,7 +231,7 @@ export default function Footer({
             </ul>
           </nav>
 
-          {/* Legal Pages Column */}
+          {/* Dynamic Legal Pages */}
           <nav aria-label="Legal Navigation">
             <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-[#D4AF37] mb-8">
               Compliance
@@ -245,7 +241,7 @@ export default function Footer({
                 legalPages.map((page, i) => (
                   <li key={i}>
                     <Link
-                      href={`/policies/${page.slug}`}
+                      href={`/legal/${page.slug}`}
                       className="hover:text-white transition-colors duration-300"
                     >
                       {page.title}
@@ -255,17 +251,17 @@ export default function Footer({
               ) : (
                 <>
                   <li>
-                    <Link href="/policies/privacy-policy" className="hover:text-white transition-colors duration-300">
+                    <Link href="/legal/privacy-policy" className="hover:text-white transition-colors duration-300">
                       Privacy Policy
                     </Link>
                   </li>
                   <li>
-                    <Link href="/policies/terms-of-service" className="hover:text-white transition-colors duration-300">
+                    <Link href="/legal/terms-of-service" className="hover:text-white transition-colors duration-300">
                       Terms of Service
                     </Link>
                   </li>
                   <li>
-                    <Link href="/policies/authenticity-guarantee" className="hover:text-white transition-colors duration-300">
+                    <Link href="/legal/authenticity-guarantee" className="hover:text-white transition-colors duration-300">
                       Authenticity Guarantee
                     </Link>
                   </li>
@@ -274,7 +270,7 @@ export default function Footer({
             </ul>
           </nav>
 
-          {/* Corporate Headquarters & Socials */}
+          {/* Corporate Headquarters */}
           <div>
             <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-[#D4AF37] mb-8">
               Headquarters
@@ -309,7 +305,7 @@ export default function Footer({
                     href={socialLinks.instagram}
                     target="_blank"
                     rel="noopener noreferrer"
-                    aria-label="Follow us on Instagram"
+                    aria-label="Follow on Instagram"
                     className="p-2 rounded-full bg-white/5 border border-white/10 hover:border-[#D4AF37] text-gray-400 hover:text-[#D4AF37] hover:scale-110 transition-all duration-300"
                   >
                     <Instagram size={18} />
@@ -320,7 +316,7 @@ export default function Footer({
                     href={socialLinks.facebook}
                     target="_blank"
                     rel="noopener noreferrer"
-                    aria-label="Follow us on Facebook"
+                    aria-label="Follow on Facebook"
                     className="p-2 rounded-full bg-white/5 border border-white/10 hover:border-[#D4AF37] text-gray-400 hover:text-[#D4AF37] hover:scale-110 transition-all duration-300"
                   >
                     <Facebook size={18} />
@@ -331,7 +327,7 @@ export default function Footer({
                     href={socialLinks.twitter}
                     target="_blank"
                     rel="noopener noreferrer"
-                    aria-label="Follow us on Twitter"
+                    aria-label="Follow on Twitter"
                     className="p-2 rounded-full bg-white/5 border border-white/10 hover:border-[#D4AF37] text-gray-400 hover:text-[#D4AF37] hover:scale-110 transition-all duration-300"
                   >
                     <Twitter size={18} />
@@ -342,7 +338,7 @@ export default function Footer({
                     href={socialLinks.youtube}
                     target="_blank"
                     rel="noopener noreferrer"
-                    aria-label="Watch us on YouTube"
+                    aria-label="Watch on YouTube"
                     className="p-2 rounded-full bg-white/5 border border-white/10 hover:border-[#D4AF37] text-gray-400 hover:text-[#D4AF37] hover:scale-110 transition-all duration-300"
                   >
                     <Youtube size={18} />
@@ -364,7 +360,7 @@ export default function Footer({
           </div>
         </div>
 
-        {/* BOTTOM SECTION: COPYRIGHT & VERIFIED SEAL */}
+        {/* BOTTOM COPYRIGHT */}
         <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-center md:text-left">
           <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500">
             © {new Date().getFullYear()} {corporateInfo?.companyName || "ESSENTIAL RUSH"}. ALL RIGHTS RESERVED.

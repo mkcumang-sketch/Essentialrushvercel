@@ -156,3 +156,56 @@ export function generateMyrioLuxuryCopy(name: string, brand?: string) {
     description: `The ${brand || ""} ${name} represents a ${randomAdjective}. Crafted from aerospace-grade materials, this timepiece features a meticulous hand-finished dial, an in-house self-winding caliber, and superlative chronometric performance. Accompanied by full diplomatic provenance and a bespoke lifetime mechanical guarantee.`,
   };
 }
+
+// ============================================================================
+// 6. SEO & METADATA INTELLIGENCE AGENT
+// ============================================================================
+export async function generateMyrioSeoMetadata(targetTitle: string, category?: string, description?: string) {
+  const apiKey = process.env.AIMLAPI_API_KEY;
+
+  if (apiKey) {
+    try {
+      const res = await fetch("https://api.aimlapi.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "openai/gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: "You are the MYRIO SEO Intelligence Agent for Essential Rush, an ultra-luxury timepiece vault. Return JSON with 'metaTitle', 'metaDescription', and 'keywords' (comma-separated string). Ensure high luxury appeal and ranking power.",
+            },
+            {
+              role: "user",
+              content: `Generate SEO metadata for: Title: "${targetTitle}", Category: "${category || 'Luxury Watches'}", Overview: "${description || ''}"`,
+            },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.6,
+        }),
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        const parsed = JSON.parse(json.choices?.[0]?.message?.content || "{}");
+        return {
+          metaTitle: parsed.metaTitle || `${targetTitle} | Essential Rush Official Vault`,
+          metaDescription: parsed.metaDescription || `Acquire the authentic ${targetTitle}. Certified provenance and global insured delivery.`,
+          keywords: parsed.keywords || `${targetTitle}, luxury watches, Swiss calibers, investment timepieces`,
+        };
+      }
+    } catch (err) {
+      console.error("MYRIO SEO Agent Error:", err);
+    }
+  }
+
+  // Deterministic Fallback
+  return {
+    metaTitle: `${targetTitle} | Essential Rush Private Vault`,
+    metaDescription: `Discover the ${targetTitle}. Independently inspected, chronometer-certified luxury horology with lifetime authentication.`,
+    keywords: `${targetTitle}, luxury watch, authentic chronometer, fine horology`,
+  };
+}

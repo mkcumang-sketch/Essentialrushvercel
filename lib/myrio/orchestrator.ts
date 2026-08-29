@@ -41,9 +41,7 @@ export async function executeMyrioOrchestration(
   const role = payload.role || "PUBLIC";
 
   try {
-    // =========================================================================
-    // 1. ADMIN INTELLIGENCE AGENTS (SUPER_ADMIN)
-    // =========================================================================
+    // 1. ADMIN INTELLIGENCE DISPATCH
     if (role === "SUPER_ADMIN") {
       if (payload.intent === "TRUTH_MODE" || lowerQuery.includes("truth mode") || lowerQuery.includes("fair analysis")) {
         const truthReport = await generateTruthAnalysisReport();
@@ -74,24 +72,20 @@ export async function executeMyrioOrchestration(
           createdAt: { $lte: twoDaysAgo },
         }).lean();
 
-        const responseText = delayedOrders.length > 0
-          ? `Detected ${delayedOrders.length} orders exceeding fulfillment SLAs. Immediate courier dispatch recommended.`
-          : "All active vault consignments are within standard SLA dispatch windows.";
-
         return {
           success: true,
           classification: "FACT",
-          response: responseText,
+          response: delayedOrders.length > 0
+            ? `Detected ${delayedOrders.length} orders exceeding fulfillment SLAs. Immediate courier dispatch recommended.`
+            : "All active vault consignments are within standard SLA dispatch windows.",
           data: { delayedCount: delayedOrders.length, orders: delayedOrders.slice(0, 5) },
           executionLatencyMs: Date.now() - startTime,
         };
       }
     }
 
-    // =========================================================================
-    // 2. LIVE DATABASE CONTEXT RETRIEVAL
-    // =========================================================================
-    let userOrdersContext = "";
+    // 2. LIVE STORE DATA
+    let userOrdersContext = "No orders found.";
     if (payload.customerEmail) {
       const orders = await Order.find({ "customer.email": payload.customerEmail.toLowerCase().trim() })
         .sort({ createdAt: -1 })
@@ -100,36 +94,56 @@ export async function executeMyrioOrchestration(
 
       if (orders.length > 0) {
         userOrdersContext = orders
-          .map((o: any) => `Order #${o.orderId || o._id.toString().slice(-6)}: Status ${o.status}, Amount ₹${o.totalAmount}`)
-          .join("; ");
+          .map((o: any) => `Order #${o.orderId || o._id.toString().slice(-6)}: Status ${o.status}, Amount ₹${o.totalAmount?.toLocaleString("en-IN")}`)
+          .join("\n");
       }
     }
 
-    const activeProducts = await Product.find({ isActive: true }).sort({ priority: -1 }).limit(5).lean();
-    const catalogContext = activeProducts
-      .map((p: any) => `${p.name} (${p.brand}) - Price ₹${p.offerPrice || p.price} - Stock: ${p.stock}`)
-      .join("; ");
+    const activeProducts = await Product.find({ isActive: true }).sort({ priority: -1 }).limit(6).lean();
+    const catalogSummary = activeProducts
+      .map((p: any) => `• ${p.name || p.title} (${p.brand}) - ₹${(p.offerPrice || p.price)?.toLocaleString("en-IN")} [Stock: ${p.stock}]`)
+      .join("\n");
 
-    // =========================================================================
-    // 3. AIML API CALL (OR FALLBACK)
-    // =========================================================================
+    // 3. CONVERSATION HISTORY RETRIEVAL
+    let conversationHistory: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
+    if (payload.sessionId) {
+      const existingSession = await MyrioCustomerSession.findOne({ sessionId: payload.sessionId }).lean();
+      if (existingSession && Array.isArray((existingSession as any).messages)) {
+        const lastTurns = (existingSession as any).messages.slice(-4);
+        conversationHistory = lastTurns.map((m: any) => ({
+          role: m.sender === "CUSTOMER" ? "user" : "assistant",
+          content: m.text,
+        }));
+      }
+    }
+
+    // 4. CALL AIML API
     let finalAiResponse = "";
-    const requiresHandoff = lowerQuery.includes("support") || lowerQuery.includes("human") || lowerQuery.includes("contact");
+    const requiresHandoff = lowerQuery.includes("human") || lowerQuery.includes("agent") || lowerQuery.includes("complaint");
     const apiKey = process.env.AIMLAPI_API_KEY;
 
     if (apiKey) {
-      const systemPrompt = `You are MYRIO, the authoritative horology intelligence and luxury concierge for Essential Rush (fine luxury watches).
-User Role: ${role}
-Customer Email: ${payload.customerEmail || "Not signed in"}
-User Order History: ${userOrdersContext || "No orders found or user unauthenticated"}
-Live Vault Catalog: ${catalogContext}
-Store Policy: 7-day inspection window on unworn watches with intact security seals. Accepted payment methods: Razorpay (Cards, UPI, NetBanking), Wire Transfer, and COD.
+      const systemPrompt = `You are MYRIO, the authoritative horology intelligence and luxury concierge for Essential Rush (a premier boutique for investment-grade Swiss timepieces).
+Client Authenticated Email: ${payload.customerEmail || "Not authenticated (Guest)"}
 
-Guidelines:
-1. Respond with high elegance, precision, and luxury tone.
-2. If the user asks about personal orders without being logged in, direct them to sign in.
-3. If they ask for human support, confirm that their concierge handoff is initiated.
-4. Answer strictly based on store policies and live catalog items.`;
+LIVE VAULT DATA:
+Orders for this client:
+${userOrdersContext}
+
+Available Vault Collection:
+${catalogSummary}
+
+Store Guarantees:
+- 7-day inspection window with intact security seals.
+- Diplomatic courier dispatch with full in-transit insurance.
+- Payments: Razorpay (Cards, NetBanking, UPI), Wire Transfer, COD for verified clients.
+
+RESPONSE GUIDELINES:
+- Respond naturally, eloquently, and adaptively as an expert luxury concierge.
+- NEVER repeat a single hardcoded script. Provide fresh, engaging, context-aware answers.
+- If the user asks about specific order status and is NOT signed in, gently ask them to log into their vault account.
+- For watch recommendations, cite models from the Live Vault Collection with pricing and design character.
+- Keep responses concise (under 80 words) and exquisitely formatted.`;
 
       const aiRes = await fetch("https://api.aimlapi.com/v1/chat/completions", {
         method: "POST",
@@ -141,35 +155,36 @@ Guidelines:
           model: "openai/gpt-4o-mini",
           messages: [
             { role: "system", content: systemPrompt },
+            ...conversationHistory,
             { role: "user", content: cleanQuery },
           ],
-          temperature: 0.7,
-          max_tokens: 400,
+          temperature: 0.75,
+          max_tokens: 300,
         }),
       });
 
       if (aiRes.ok) {
         const json = await aiRes.json();
-        finalAiResponse = json.choices?.[0]?.message?.content || "";
+        finalAiResponse = json.choices?.[0]?.message?.content?.trim() || "";
       }
     }
 
-    // Deterministic Offline Fallback if API key is missing or request fails
+    // Deterministic Fallback if offline
     if (!finalAiResponse) {
       if (lowerQuery.includes("order") || lowerQuery.includes("track")) {
-        finalAiResponse = payload.customerEmail && userOrdersContext
+        finalAiResponse = payload.customerEmail && userOrdersContext !== "No orders found."
           ? `📦 Here are your active vault consignments:\n${userOrdersContext}`
-          : "To protect your privacy, please sign in to track your vault consignments.";
+          : "To inspect your consignment status, please sign in to your vault account.";
       } else if (lowerQuery.includes("return") || lowerQuery.includes("refund")) {
-        finalAiResponse = "🔄 Essential Rush offers a 7-day inspection window on all authentic timepieces. Original seals must remain intact.";
-      } else if (lowerQuery.includes("payment") || lowerQuery.includes("pay") || lowerQuery.includes("upi")) {
-        finalAiResponse = "💳 We accept UPI, Credit/Debit cards, NetBanking via Razorpay, Bank Transfers, and Cash on Delivery (COD).";
+        finalAiResponse = "🔄 Essential Rush offers a 7-day inspection window on all unworn timepieces with unbroken security seals.";
+      } else if (lowerQuery.includes("payment") || lowerQuery.includes("pay")) {
+        finalAiResponse = "💳 We support UPI, Cards, and NetBanking via Razorpay, along with Bank Wire and COD.";
       } else {
-        finalAiResponse = "Welcome to Essential Rush. I am MYRIO. How may I assist your horology journey today?";
+        finalAiResponse = "Welcome to Essential Rush. I am MYRIO. How may I assist your timepiece acquisition today?";
       }
     }
 
-    // Store message session state in DB
+    // Save Session Turn
     if (payload.sessionId) {
       await MyrioCustomerSession.findOneAndUpdate(
         { sessionId: payload.sessionId },
@@ -194,11 +209,11 @@ Guidelines:
       executionLatencyMs: Date.now() - startTime,
     };
   } catch (err: any) {
-    console.error("MYRIO AIML API Orchestration Error:", err);
+    console.error("MYRIO Orchestration Error:", err);
     return {
       success: false,
       classification: "UNKNOWN",
-      response: "MYRIO encountered an unexpected internal error.",
+      response: "MYRIO encountered a communication bottleneck.",
       executionLatencyMs: Date.now() - startTime,
     };
   }
