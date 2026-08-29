@@ -5,11 +5,11 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import {
-  runSecurityAgentAudit,
-  runOrderLogisticsAgent,
-  runInventoryDepletionAgent,
-  runAbandonedCartRecoveryAgent,
-} from "@/lib/ai-engine/agents";
+  runMyrioOrderLogisticsAgent,
+  runMyrioInventoryAgent,
+  runMyrioCartRecoveryAgent,
+} from "@/lib/myrio/agents";
+import { generateSystemHealthReport } from "@/lib/myrio/self-health";
 
 export async function POST(req: Request) {
   try {
@@ -24,26 +24,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Unauthorized access" }, { status: 401 });
     }
 
-    // Execute All 4 Specialized Agents in Parallel
-    const [securityRes, orderRes, inventoryRes, recoveryRes] = await Promise.allSettled([
-      runSecurityAgentAudit(),
-      runOrderLogisticsAgent(),
-      runInventoryDepletionAgent(),
-      runAbandonedCartRecoveryAgent(),
+    const [orderRes, inventoryRes, recoveryRes, healthRes] = await Promise.allSettled([
+      runMyrioOrderLogisticsAgent(),
+      runMyrioInventoryAgent(),
+      runMyrioCartRecoveryAgent(),
+      generateSystemHealthReport(),
     ]);
 
     return NextResponse.json({
       success: true,
       timestamp: new Date().toISOString(),
-      agentResults: {
-        security: securityRes.status === "fulfilled" ? securityRes.value : null,
+      myrioAgents: {
         logistics: orderRes.status === "fulfilled" ? orderRes.value : null,
         inventory: inventoryRes.status === "fulfilled" ? inventoryRes.value : null,
         cartRecovery: recoveryRes.status === "fulfilled" ? recoveryRes.value : null,
+        systemHealth: healthRes.status === "fulfilled" ? healthRes.value : null,
       },
     });
   } catch (error: any) {
-    console.error("AI Agent Runner Error:", error);
+    console.error("MYRIO Agent Runner Error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

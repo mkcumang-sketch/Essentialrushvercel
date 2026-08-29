@@ -1,25 +1,16 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useMemo, useCallback, ReactNode, memo } from 'react';
-import { motion, AnimatePresence, useScroll, useTransform, useSpring, useMotionValue } from 'framer-motion';
+import React, { useState, useEffect, useMemo, useCallback, ReactNode, memo } from 'react';
+import { motion, AnimatePresence, useScroll, useSpring } from 'framer-motion';
 import {
   Menu, Search, ShieldCheck, ShoppingBag, User, Plus, Sparkles, ChevronDown, Lock, X, Star, CheckCircle,
-  Instagram, Facebook, Twitter, Youtube, MapPin, Phone, Mail, Linkedin, ArrowRight, Camera, UploadCloud, RefreshCcw, Trash2, Zap
+  Instagram, Facebook, Twitter, Youtube, MapPin, Phone, Mail, Linkedin, ArrowRight, Camera, UploadCloud, RefreshCcw, Trash2, Zap, Award
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from "next-auth/react";
 import { useHydratedCart } from '@/store/cartStoretemp';
 import { Fraunces, Inter, JetBrains_Mono } from 'next/font/google';
-import { 
-  motionConfig, 
-  fadeUpVariants, 
-  drawerVariants, 
-  modalVariants, 
-  staggerContainerVariants, 
-  staggerItemVariants,
-  productCardVariants 
-} from '@/lib/motion';
 
 const displayFont = Fraunces({ subsets: ['latin'], weight: ['300', '400', '600', '700', '900'], style: ['normal', 'italic'], variable: '--font-display' });
 const bodyFont = Inter({ subsets: ['latin'], weight: ['400', '500', '600', '700'], variable: '--font-body' });
@@ -27,7 +18,7 @@ const monoFont = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '500', '70
 
 const MONO = 'font-[family-name:var(--font-mono)] tabular-nums';
 
-// 🚀 DESKTOP ONLY LIGHTWEIGHT PARTICLES
+// 🚀 DESKTOP LIGHTWEIGHT PARTICLES
 const ParticleField = memo(() => {
   const [isMounted, setIsMounted] = useState(false);
   useEffect(() => {
@@ -171,9 +162,10 @@ interface Review {
   rating: number;
   product: string;
   visibility: 'public' | 'private' | 'pending';
+  media?: string[];
 }
 
-// 🎬 HIGH PERFORMANCE CINEMATIC BREAK
+// 🎬 CINEMATIC BREAK
 const CinematicBreak = memo(({ videoUrl, title }: { videoUrl?: string; title?: string }) => {
   if (!videoUrl || videoUrl.trim() === '') return null;
   
@@ -202,7 +194,7 @@ const CinematicBreak = memo(({ videoUrl, title }: { videoUrl?: string; title?: s
 });
 CinematicBreak.displayName = "CinematicBreak";
 
-// 🌟 ULTRA-FAST FLUID HERO
+// 🌟 HERO SECTION
 const Isolated4DHero = memo(({ config }: { config: SiteConfig | null }) => {
   const router = useRouter();
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
@@ -233,7 +225,6 @@ const Isolated4DHero = memo(({ config }: { config: SiteConfig | null }) => {
       aria-label="Shop luxury collection"
       className="relative h-[100dvh] w-full bg-[#0B0E11] cursor-pointer overflow-hidden font-sans select-none"
     >
-      {/* Background Media */}
       <div className="absolute inset-0 w-full h-full z-10 overflow-hidden bg-black pointer-events-none">
         <AnimatePresence mode="wait">
           <motion.div
@@ -268,7 +259,6 @@ const Isolated4DHero = memo(({ config }: { config: SiteConfig | null }) => {
         <div className="absolute inset-0 bg-gradient-to-t from-[#0B0E11] via-black/35 to-black/55 pointer-events-none" />
       </div>
 
-      {/* Foreground Content */}
       <div className="absolute inset-0 z-30 flex items-center justify-center text-center px-4 sm:px-6 md:px-10 pointer-events-none">
         <AnimatePresence mode="wait">
           <motion.div
@@ -297,11 +287,8 @@ const Isolated4DHero = memo(({ config }: { config: SiteConfig | null }) => {
         </AnimatePresence>
       </div>
 
-      {/* Slide Indicators - Exactly Centered Transparent Pill */}
       {slides.length > 1 && (
-        <div 
-          className="absolute bottom-6 md:bottom-10 inset-x-0 z-40 flex items-center justify-center pointer-events-none"
-        >
+        <div className="absolute bottom-6 md:bottom-10 inset-x-0 z-40 flex items-center justify-center pointer-events-none">
           <div 
             onClick={(e) => e.stopPropagation()}
             className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/25 backdrop-blur-md border border-white/10 shadow-lg pointer-events-auto"
@@ -327,7 +314,6 @@ const Isolated4DHero = memo(({ config }: { config: SiteConfig | null }) => {
 });
 Isolated4DHero.displayName = "Isolated4DHero";
 
-// MAIN COMPONENT
 export default function Home() {
   const router = useRouter();
   const { data: session, status } = useSession();
@@ -362,7 +348,6 @@ export default function Home() {
   const [newsletterEmail, setNewsletterEmail] = useState("");
   const [isSubscribing, setIsSubscribing] = useState(false);
 
-  // Passive Scroll Handler
   useEffect(() => {
     let ticking = false;
     const handleScroll = () => {
@@ -383,11 +368,10 @@ export default function Home() {
     setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3500);
   }, []);
 
-  // Instant SWR Background Fetch (Zero Page Blocker)
+  // SWR Instant Cache + Silent Background Sync
   useEffect(() => {
-    const CACHE_KEY = 'essential_home_cache';
+    const CACHE_KEY = 'essential_home_cache_v2';
 
-    // 1. Instant Cache Load
     const cached = localStorage.getItem(CACHE_KEY);
     if (cached) {
       try {
@@ -399,19 +383,22 @@ export default function Home() {
         if (parsed.config?.galleryImages) setGalleryImages(parsed.config.galleryImages);
         if (parsed.config?.promotionalVideos) setPromoVideos(parsed.config.promotionalVideos);
         if (parsed.config?.faqs) setLiveFaqs(parsed.config.faqs);
+        if (parsed.config?.socialLinks) setSocialLinks(parsed.config.socialLinks);
+        if (parsed.config?.corporateInfo) setCorporateInfo(parsed.config.corporateInfo);
+        if (parsed.config?.legalPages) setLegalPages(parsed.config.legalPages);
       } catch (e) {
-        console.error("Cache error", e);
+        console.error("Cache parsing error", e);
       }
     }
 
-    // 2. Silent Background Sync
     const syncData = async () => {
       try {
+        const ts = Date.now();
         const [cRes, pRes, rRes, clRes] = await Promise.allSettled([
-          fetch('/api/cms'),
-          fetch('/api/products'),
-          fetch('/api/reviews'),
-          fetch('/api/celebrity')
+          fetch(`/api/cms?t=${ts}`),
+          fetch(`/api/products?t=${ts}`),
+          fetch(`/api/reviews?t=${ts}`),
+          fetch(`/api/celebrity?t=${ts}`)
         ]);
 
         let newConfig = config;
@@ -458,7 +445,7 @@ export default function Home() {
           reviews: newReviews
         }));
       } catch (e) {
-        console.error("Background sync", e);
+        console.error("Background sync error", e);
       }
     };
 
@@ -523,7 +510,7 @@ export default function Home() {
   const handleReviewSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (honeyPot.length > 0) return setReviewStatus('success');
-    if (!reviewForm.userName || !reviewForm.comment) return showLuxuryToast("Fill details.", "error");
+    if (!reviewForm.userName || !reviewForm.comment) return showLuxuryToast("Please fill all details.", "error");
     setReviewStatus('submitting');
     try {
       const payload = { ...reviewForm, media: reviewMedia, product: 'GLOBAL', visibility: 'pending' };
@@ -570,7 +557,7 @@ export default function Home() {
     >
       <ParticleField />
       
-      {/* Luxury Toast */}
+      {/* Luxury Toast Notification */}
       <AnimatePresence>
         {toast.show && (
           <motion.div
@@ -585,24 +572,24 @@ export default function Home() {
         )}
       </AnimatePresence>
       
-      {/* Progress Bar */}
+      {/* Top Scroll Progress Bar */}
       <motion.div
         className="fixed top-0 left-0 right-0 h-1 bg-[#D4AF37] origin-left z-[1000]"
         style={{ scaleX }}
       />
 
-      {/* TOP BAR */}
+      {/* TOP HEADER STATUS BAR */}
       <div className="bg-[#0B0E11] text-white py-2 px-4 md:px-12 flex justify-between items-center text-[8px] md:text-[9px] font-bold uppercase tracking-[3px] z-[601] relative border-b border-white/5">
         <div className="flex items-center gap-2">
           <Lock size={10} className="text-[#D4AF37]" /> Secure Checkout
         </div>
-        <div className="hidden sm:block text-gray-400">Complimentary Global Shipping</div>
+        <div className="hidden sm:block text-gray-400">Complimentary Global Shipping & Valuation</div>
         <div className="flex items-center gap-2">
           <ShieldCheck size={10} className="text-[#D4AF37]" /> Authenticity Guarantee
         </div>
       </div>
 
-      {/* NAVIGATION */}
+      {/* NAVIGATION BAR */}
       <nav
         className={`fixed w-full z-[600] transition-all duration-300 ${
           isScrolled
@@ -624,6 +611,8 @@ export default function Home() {
             <div className={`hidden lg:flex gap-8 text-[10px] font-bold uppercase tracking-[3px] ${isScrolled ? 'text-gray-600' : 'text-white/80'}`}>
               <Link href="/shop" className="hover:text-[#D4AF37] transition-colors">Collection</Link>
               <Link href="#ourstory" className="hover:text-[#D4AF37] transition-colors">Heritage</Link>
+              <Link href="#vault" className="hover:text-[#D4AF37] transition-colors">Vault</Link>
+              <Link href="#faq" className="hover:text-[#D4AF37] transition-colors">Concierge</Link>
             </div>
           </div>
 
@@ -664,13 +653,59 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* HERO SECTION */}
+      {/* MOBILE DRAWER */}
+      <AnimatePresence>
+        {isMenuOpen && (
+          <div className="fixed inset-0 z-[1000] flex">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMenuOpen(false)}
+              className="fixed inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ x: "-100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "-100%" }}
+              transition={{ type: "spring", damping: 30, stiffness: 300 }}
+              className="relative w-4/5 max-w-sm bg-[#0B0E11] text-white h-full p-8 flex flex-col justify-between z-10 border-r border-white/10 shadow-2xl"
+            >
+              <div>
+                <div className="flex justify-between items-center mb-12">
+                  <h2 className="text-xl font-[family-name:var(--font-display)] tracking-[4px] uppercase text-[#D4AF37]">
+                    Essential Vault
+                  </h2>
+                  <button onClick={() => setIsMenuOpen(false)} className="p-2 text-gray-400 hover:text-white">
+                    <X size={20} />
+                  </button>
+                </div>
+                <div className="flex flex-col gap-6 text-sm font-bold uppercase tracking-[4px]">
+                  <Link href="/shop" onClick={() => setIsMenuOpen(false)} className="hover:text-[#D4AF37]">All Timepieces</Link>
+                  <Link href="#ourstory" onClick={() => setIsMenuOpen(false)} className="hover:text-[#D4AF37]">Heritage & Craft</Link>
+                  <Link href="#celebrities" onClick={() => setIsMenuOpen(false)} className="hover:text-[#D4AF37]">Worn By Legends</Link>
+                  <Link href="#vault" onClick={() => setIsMenuOpen(false)} className="hover:text-[#D4AF37]">Curated Vault</Link>
+                  <Link href="#reviews" onClick={() => setIsMenuOpen(false)} className="hover:text-[#D4AF37]">Client Feedback</Link>
+                  <Link href="#faq" onClick={() => setIsMenuOpen(false)} className="hover:text-[#D4AF37]">Concierge FAQ</Link>
+                  <Link href="/account" onClick={() => setIsMenuOpen(false)} className="hover:text-[#D4AF37]">My Vault Account</Link>
+                </div>
+              </div>
+              <div className="border-t border-white/10 pt-6 text-[10px] uppercase font-bold text-gray-400">
+                <p>Private Horology Consignment</p>
+                <p className="text-[#D4AF37] mt-1">Authenticity Guaranteed</p>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 1. HERO SECTION */}
       <Isolated4DHero config={config || {}} />
 
-      {/* CINEMATIC BREAK 1 */}
+      {/* 2. CINEMATIC BREAK 1 */}
       <CinematicBreak videoUrl={promoVideos[0]} title="Precision." />
 
-      {/* BRANDS CAROUSEL */}
+      {/* 3. LUXURY BRANDS CAROUSEL */}
       <section className="bg-white py-10 border-b border-gray-100 overflow-hidden relative z-[40]">
         <div className="flex w-[200%]">
           <motion.div
@@ -689,7 +724,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* NEW ARRIVALS SECTION */}
+      {/* 4. NEW ARRIVALS HORIZONTAL SCROLL */}
       <section className="py-20 md:py-32 relative overflow-hidden bg-[#F6F1E7]">
         <div className="px-6 md:px-16 max-w-[1600px] mx-auto mb-12 flex justify-between items-end">
           <div>
@@ -749,10 +784,10 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CINEMATIC BREAK 2 */}
+      {/* 5. CINEMATIC BREAK 2 */}
       <CinematicBreak videoUrl={promoVideos[1]} title="Elegance." />
 
-      {/* SHOP SECTION */}
+      {/* 6. MAIN CATALOG SHOP SECTION */}
       <section id="ourcollection" className="py-20 md:py-32 relative overflow-hidden bg-white">
         <div className="px-6 md:px-16 max-w-[1600px] mx-auto">
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-16 border-b border-gray-200 pb-8 gap-6">
@@ -839,7 +874,215 @@ export default function Home() {
         </div>
       </section>
 
-      {/* FOOTER */}
+      {/* 7. WORN BY LEGENDS / CELEBRITY HOROLOGY */}
+      {liveCelebrities.length > 0 && (
+        <section id="celebrities" className="py-20 md:py-32 bg-[#0B0E11] text-white relative overflow-hidden">
+          <div className="max-w-[1600px] mx-auto px-6 md:px-16">
+            <div className="mb-16">
+              <Eyebrow className="text-[#D4AF37] mb-2">Iconic Wristwear</Eyebrow>
+              <h2 className="text-4xl md:text-6xl font-[family-name:var(--font-display)] font-bold tracking-tight">
+                Worn by Legends.
+              </h2>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {liveCelebrities.map((celeb, idx) => (
+                <div key={celeb._id || idx} className="group relative rounded-3xl overflow-hidden bg-white/5 border border-white/10 aspect-[3/4]">
+                  <img
+                    src={celeb.imageUrl || celeb.img}
+                    alt={celeb.name}
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent flex flex-col justify-end p-6">
+                    <p className="text-[9px] font-mono text-[#D4AF37] uppercase font-bold tracking-widest">{celeb.watch || "Investment Piece"}</p>
+                    <h3 className="text-xl font-bold font-serif">{celeb.name}</h3>
+                    <p className="text-xs text-gray-400 mt-1">{celeb.title || "Brand Ambassador"}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* 8. OUR STORY / HERITAGE */}
+      <section id="ourstory" className="py-24 md:py-36 bg-[#F6F1E7] text-black border-t border-b border-gray-200">
+        <div className="max-w-4xl mx-auto px-6 md:px-12 text-center">
+          <Eyebrow className="text-[#D4AF37] justify-center mb-4">Provenance & Heritage</Eyebrow>
+          <h2 className="text-4xl md:text-6xl font-[family-name:var(--font-display)] font-black tracking-tight mb-8">
+            {config?.aboutConfig?.title || "Crafted for Generations."}
+          </h2>
+          <p className="text-base md:text-xl text-gray-700 leading-relaxed font-serif italic mb-8">
+            {config?.aboutConfig?.content ||
+              "Essential Rush was conceived to preserve the pinnacle of mechanical watchmaking. Every timepiece curated within our private vault undergoes multi-point diplomatic provenance verification and rigorous chronometric testing."}
+          </p>
+          <div className="flex justify-center items-center gap-8 text-[10px] font-bold uppercase tracking-[3px] text-gray-500">
+            <span>• Authentic Calibers</span>
+            <span>• Diplomatic Provenance</span>
+            <span>• Lifetime Mechanical Guarantee</span>
+          </div>
+        </div>
+      </section>
+
+      {/* 9. CURATED LUXURY GALLERY GRID */}
+      {galleryImages.length > 0 && (
+        <section id="vault" className="py-20 md:py-32 bg-white">
+          <div className="max-w-[1600px] mx-auto px-6 md:px-16">
+            <div className="mb-16 text-center">
+              <Eyebrow className="text-gray-500 justify-center mb-2">Visual Vault</Eyebrow>
+              <h2 className="text-4xl md:text-6xl font-[family-name:var(--font-display)] font-bold tracking-tight">
+                Curated Horology.
+              </h2>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              {galleryImages.slice(0, 6).map((img, i) => (
+                <div key={i} className="aspect-square rounded-2xl overflow-hidden group bg-gray-100 border border-gray-200">
+                  <img
+                    src={img}
+                    alt="Gallery"
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* 10. CLIENT TESTIMONIALS & REVIEWS MARQUEE */}
+      <section id="reviews" className="py-20 md:py-32 bg-[#0B0E11] text-white overflow-hidden relative">
+        <div className="max-w-[1600px] mx-auto px-6 md:px-16 mb-12 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-6">
+          <div>
+            <Eyebrow className="text-[#D4AF37] mb-2">Verified Feedback</Eyebrow>
+            <h2 className="text-4xl md:text-6xl font-[family-name:var(--font-display)] font-bold tracking-tight">
+              Client Commendations.
+            </h2>
+          </div>
+          <button
+            onClick={() => setIsReviewModalOpen(true)}
+            className="px-6 py-3.5 bg-[#D4AF37] text-black font-black uppercase text-xs tracking-widest rounded-full hover:bg-white transition-all flex items-center gap-2 cursor-pointer shadow-xl"
+          >
+            <Star size={14} /> Submit Commendation
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-[1600px] mx-auto px-6 md:px-16">
+          {flowingReviews.slice(0, 6).map((rev, idx) => (
+            <div key={rev._id || idx} className="bg-white/5 border border-white/10 rounded-3xl p-6 flex flex-col justify-between space-y-4">
+              <div>
+                <div className="flex gap-1 text-[#D4AF37] mb-3">
+                  {Array.from({ length: rev.rating || 5 }).map((_, r) => (
+                    <Star key={r} size={14} fill="#D4AF37" />
+                  ))}
+                </div>
+                <p className="text-xs text-gray-300 italic font-serif leading-relaxed line-clamp-4">"{rev.comment}"</p>
+              </div>
+              <div className="border-t border-white/10 pt-4 flex justify-between items-center text-[10px]">
+                <span className="font-bold uppercase tracking-wider text-white">{rev.userName}</span>
+                <span className="text-emerald-400 font-mono flex items-center gap-1"><CheckCircle size={10} /> Verified Patron</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* REVIEW SUBMISSION MODAL */}
+      <AnimatePresence>
+        {isReviewModalOpen && (
+          <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsReviewModalOpen(false)}
+              className="fixed inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative bg-[#0B0E11] text-white border border-white/15 rounded-3xl p-8 max-w-md w-full shadow-2xl z-10"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-serif font-bold text-[#D4AF37]">Patron Commendation</h3>
+                <button onClick={() => setIsReviewModalOpen(false)} className="p-1 text-gray-400 hover:text-white">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleReviewSubmit} className="space-y-4">
+                <input
+                  type="text"
+                  placeholder="Your Full Name / Alias"
+                  value={reviewForm.userName}
+                  onChange={(e) => setReviewForm({ ...reviewForm, userName: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs outline-none focus:border-[#D4AF37]"
+                />
+                <textarea
+                  rows={4}
+                  placeholder="Share your timepiece acquisition experience..."
+                  value={reviewForm.comment}
+                  onChange={(e) => setReviewForm({ ...reviewForm, comment: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs outline-none focus:border-[#D4AF37]"
+                />
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-400">Rating:</span>
+                  <div className="flex gap-1.5 cursor-pointer">
+                    {[1, 2, 3, 4, 5].map((num) => (
+                      <Star
+                        key={num}
+                        size={18}
+                        className={num <= reviewForm.rating ? "text-[#D4AF37] fill-[#D4AF37]" : "text-gray-600"}
+                        onClick={() => setReviewForm({ ...reviewForm, rating: num })}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={reviewStatus === "submitting"}
+                  className="w-full py-3.5 bg-[#D4AF37] text-black font-black uppercase text-xs tracking-widest rounded-xl hover:bg-white transition-all cursor-pointer shadow-lg disabled:opacity-50"
+                >
+                  {reviewStatus === "submitting" ? "Transmitting..." : "Submit for Verification"}
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 11. FAQ CONCIERGE ACCORDION */}
+      {liveFaqs.length > 0 && (
+        <section id="faq" className="py-20 md:py-32 bg-white">
+          <div className="max-w-4xl mx-auto px-6 md:px-12">
+            <div className="text-center mb-16">
+              <Eyebrow className="text-gray-500 justify-center mb-2">Concierge Advisory</Eyebrow>
+              <h2 className="text-4xl md:text-6xl font-[family-name:var(--font-display)] font-bold tracking-tight text-black">
+                Frequently Asked.
+              </h2>
+            </div>
+            <div className="space-y-4">
+              {liveFaqs.map((faq, i) => (
+                <div key={i} className="border border-gray-200 rounded-2xl overflow-hidden">
+                  <button
+                    onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                    className="w-full p-6 text-left flex justify-between items-center font-bold text-sm hover:bg-gray-50 transition-colors"
+                  >
+                    <span>{faq.question || faq.q}</span>
+                    <ChevronDown size={18} className={`transition-transform duration-300 ${openFaq === i ? "rotate-180 text-[#D4AF37]" : ""}`} />
+                  </button>
+                  {openFaq === i && (
+                    <div className="px-6 pb-6 text-xs text-gray-600 leading-relaxed font-serif">
+                      {faq.answer || faq.a}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* 12. COMPLETE LUXURY FOOTER */}
       <footer className="bg-[#0B0E11] text-white pt-24 pb-10 border-t border-white/10">
         <div className="max-w-[1600px] mx-auto px-6 md:px-16">
           <div className="flex flex-col md:flex-row justify-between border-b border-white/10 pb-16 mb-16 gap-10">
@@ -867,10 +1110,52 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="text-center border-t border-white/5 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-[9px] font-bold uppercase tracking-[3px] text-gray-500">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-10 pb-16 border-b border-white/10 text-xs text-gray-400">
+            <div>
+              <h4 className="text-white font-bold uppercase tracking-widest text-[10px] mb-4">Corporate Office</h4>
+              <p>{corporateInfo?.companyName || "Essential Rush Pvt Ltd"}</p>
+              <p className="mt-2">{corporateInfo?.address || "The Vault, Financial District"}</p>
+              <p className="mt-2">{corporateInfo?.phone1 || "+91 (0) 800-VAULT-RUSH"}</p>
+              <p className="mt-1">{corporateInfo?.email || "concierge@essentialrush.com"}</p>
+            </div>
+
+            <div>
+              <h4 className="text-white font-bold uppercase tracking-widest text-[10px] mb-4">Collections</h4>
+              <ul className="space-y-2">
+                <li><Link href="/shop" className="hover:text-white">Investment Grade</Link></li>
+                <li><Link href="/shop" className="hover:text-white">Rare Vintage</Link></li>
+                <li><Link href="/shop" className="hover:text-white">Modern Complications</Link></li>
+                <li><Link href="/shop" className="hover:text-white">Haute Horlogerie</Link></li>
+              </ul>
+            </div>
+
+            <div>
+              <h4 className="text-white font-bold uppercase tracking-widest text-[10px] mb-4">Legal Policies</h4>
+              <ul className="space-y-2">
+                {legalPages.map((lp, idx) => (
+                  <li key={idx}><Link href={`/legal/${lp.slug}`} className="hover:text-white">{lp.title}</Link></li>
+                ))}
+                <li><Link href="/legal/privacy-policy" className="hover:text-white">Privacy Policy</Link></li>
+                <li><Link href="/legal/terms" className="hover:text-white">Terms of Consignment</Link></li>
+              </ul>
+            </div>
+
+            <div>
+              <h4 className="text-white font-bold uppercase tracking-widest text-[10px] mb-4">Diplomatic Connect</h4>
+              <div className="flex gap-4 text-gray-400">
+                {socialLinks?.instagram && <a href={socialLinks.instagram} target="_blank" rel="noreferrer" className="hover:text-[#D4AF37]"><Instagram size={18} /></a>}
+                {socialLinks?.facebook && <a href={socialLinks.facebook} target="_blank" rel="noreferrer" className="hover:text-[#D4AF37]"><Facebook size={18} /></a>}
+                {socialLinks?.twitter && <a href={socialLinks.twitter} target="_blank" rel="noreferrer" className="hover:text-[#D4AF37]"><Twitter size={18} /></a>}
+                {socialLinks?.youtube && <a href={socialLinks.youtube} target="_blank" rel="noreferrer" className="hover:text-[#D4AF37]"><Youtube size={18} /></a>}
+                {socialLinks?.linkedin && <a href={socialLinks.linkedin} target="_blank" rel="noreferrer" className="hover:text-[#D4AF37]"><Linkedin size={18} /></a>}
+              </div>
+            </div>
+          </div>
+
+          <div className="text-center pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-[9px] font-bold uppercase tracking-[3px] text-gray-500">
             <p>© {new Date().getFullYear()} ESSENTIAL RUSH. ALL RIGHTS RESERVED.</p>
             <div className="flex items-center gap-2 text-gray-400">
-              <ShieldCheck size={14} className="text-[#D4AF37]" /> Secured Vault
+              <ShieldCheck size={14} className="text-[#D4AF37]" /> Secured Vault Core
             </div>
           </div>
         </div>
