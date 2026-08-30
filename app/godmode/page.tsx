@@ -564,7 +564,7 @@ function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[#07090b] text-gray-200 flex font-sans selection:bg-[#D4AF37] selection:text-black">
+    <div className="h-screen overflow-hidden bg-[#07090b] text-gray-200 flex font-sans selection:bg-[#D4AF37] selection:text-black">
       {/* BACKGROUND MESH */}
       <div className="fixed inset-0 pointer-events-none z-0 bg-[radial-gradient(#ffffff08_1px,transparent_1px)] [background-size:24px_24px]" />
 
@@ -656,7 +656,7 @@ function AdminDashboard() {
       {/* =====================================================================
           MAIN EXECUTIVE VIEWPORT
       ====================================================================== */}
-      <main className="flex-1 min-w-0 flex flex-col h-screen overflow-y-auto relative z-10">
+      <main className="flex-1 min-w-0 flex flex-col h-screen min-h-0 overflow-hidden relative z-10 bg-[#07090b]">
         {/* Top Header Status Bar */}
         <header className="sticky top-0 z-40 bg-[#07090b]/80 backdrop-blur-xl border-b border-white/10 px-6 lg:px-10 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
@@ -681,7 +681,7 @@ function AdminDashboard() {
         </header>
 
         {/* Main Work Area */}
-        <div className="p-6 lg:p-10 flex-1">
+        <div className="flex-1 min-h-0 overflow-y-auto p-6 lg:p-10 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-white/10">
           <AnimatePresence mode="wait">
             {activeTab === "FULL_DASHBOARD" && (
               <DashboardTab

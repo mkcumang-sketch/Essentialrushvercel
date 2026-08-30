@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   Brain,
   TrendingUp,
@@ -11,16 +10,15 @@ import {
   Trash2,
   RefreshCw,
   Search,
-  CheckCircle2,
-  Award,
   Zap,
-  Tag,
 } from "lucide-react";
 
 export default function MyrioLearningTab() {
   const [activeSubTab, setActiveSubTab] = useState<"TRENDS" | "TRAINING">("TRENDS");
+  const [trendCategory, setTrendCategory] = useState("Rolex & Luxury Sports");
   const [trendRadar, setTrendRadar] = useState<any[]>([]);
   const [loadingTrends, setLoadingTrends] = useState(false);
+  const [trendError, setTrendError] = useState("");
 
   // Custom Training Form
   const [rules, setRules] = useState<any[]>([]);
@@ -40,26 +38,50 @@ export default function MyrioLearningTab() {
     }
   }, []);
 
-  const runTrendRadar = useCallback(async () => {
+  const runTrendRadar = useCallback(async (customCategory?: string) => {
+    const categoryToScan = (customCategory ?? trendCategory).trim();
+
+    if (!categoryToScan) {
+      setTrendError("Please enter a category or niche.");
+      return;
+    }
+
     setLoadingTrends(true);
+    setTrendError("");
+
     try {
       const res = await fetch("/api/myrio/learning", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "TREND_RADAR" }),
+        body: JSON.stringify({
+          action: "TREND_RADAR",
+          category: categoryToScan,
+        }),
       });
+
       const data = await res.json();
-      if (data.success && data.radar) setTrendRadar(data.radar);
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Trend scan failed.");
+      }
+
+      if (Array.isArray(data.radar)) {
+        setTrendRadar(data.radar.slice(0, 10));
+      } else {
+        throw new Error("Invalid trend data received.");
+      }
     } catch (err) {
-      console.error(err);
+      console.error("MYRIO Trend Radar Error:", err);
+      setTrendRadar([]);
+      setTrendError(err instanceof Error ? err.message : "Unable to scan trends.");
     } finally {
       setLoadingTrends(false);
     }
-  }, []);
+  }, [trendCategory]);
 
   useEffect(() => {
     fetchRules();
-    runTrendRadar();
+    runTrendRadar("Rolex & Luxury Sports");
   }, [fetchRules, runTrendRadar]);
 
   const handleAddRule = async (e: React.FormEvent) => {
@@ -154,20 +176,71 @@ export default function MyrioLearningTab() {
           <div className="flex justify-between items-center">
             <div>
               <h3 className="text-lg font-serif font-bold text-white flex items-center gap-2">
-                <Sparkles size={18} className="text-[#D4AF37]" /> Global Market Trend Radar
+                <Sparkles size={18} className="text-[#D4AF37]" /> Category Market Trend Radar
               </h3>
               <p className="text-xs text-gray-400 mt-1">
-                Synthesized from Amazon Best-Sellers, Google Search surges, and Swiss auction indices.
+                MYRIO analyzes the selected category using available market/search signals.
               </p>
             </div>
             <button
-              onClick={runTrendRadar}
+              onClick={() => runTrendRadar()}
               disabled={loadingTrends}
               className="px-4 py-2 bg-white/5 hover:bg-[#D4AF37] hover:text-black border border-white/15 text-xs font-bold uppercase rounded-xl transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
             >
               <RefreshCw size={13} className={loadingTrends ? "animate-spin" : ""} />
               {loadingTrends ? "Analyzing Market Data..." : "Re-Scan Trends"}
             </button>
+          </div>
+
+          <div className="bg-[#0a0a0a] border border-white/10 p-6 rounded-3xl shadow-xl">
+            <label className="text-[9px] font-bold uppercase tracking-widest text-gray-400 block mb-2">
+              Target Category / Niche
+            </label>
+
+            <div className="flex flex-col lg:flex-row gap-3">
+              <input
+                type="text"
+                value={trendCategory}
+                onChange={(e) => setTrendCategory(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") runTrendRadar();
+                }}
+                placeholder="e.g. Rolex, Chronographs, Dress Watches, Vintage Divers"
+                className="flex-1 bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-[#D4AF37]"
+              />
+
+              <button
+                type="button"
+                onClick={() => runTrendRadar()}
+                disabled={loadingTrends}
+                className="px-6 py-3 bg-[#D4AF37] hover:bg-white text-black font-black uppercase text-xs tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                <Search size={14} className={loadingTrends ? "animate-spin" : ""} />
+                {loadingTrends ? "Scanning..." : "Fetch Top 10"}
+              </button>
+            </div>
+
+            <div className="flex gap-2 flex-wrap mt-4">
+              {["Rolex Sports", "Patek & AP", "Vintage Gold", "Minimalist Dress"].map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => {
+                    setTrendCategory(cat);
+                    runTrendRadar(cat);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-[#D4AF37] text-[10px] font-bold text-gray-300 hover:text-white transition-all"
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            {trendError && (
+              <p className="mt-3 text-[10px] text-red-400 border border-red-500/20 bg-red-500/5 rounded-lg px-3 py-2">
+                {trendError}
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
