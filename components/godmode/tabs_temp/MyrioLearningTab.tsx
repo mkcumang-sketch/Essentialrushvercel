@@ -1,11 +1,6 @@
 "use client";
 
-import React, {
-  useCallback,
-  useEffect,
-  useState,
-} from "react";
-
+import React, { useCallback, useState } from "react";
 import {
   Brain,
   TrendingUp,
@@ -54,10 +49,11 @@ interface KnowledgeRule {
   updatedAt?: string;
 }
 
-interface ApiResponse<T = unknown> {
+interface ApiResponse {
   success: boolean;
   error?: string;
   message?: string;
+  warning?: string;
   rules?: KnowledgeRule[];
   radar?: RadarItem[];
   category?: string;
@@ -145,11 +141,7 @@ function getScoreLabel(score: number): string {
 }
 
 function getScoreWidth(score: number): string {
-  const safeScore = Math.max(
-    0,
-    Math.min(100, score)
-  );
-
+  const safeScore = Math.max(0, Math.min(100, score));
   return `${safeScore}%`;
 }
 
@@ -175,7 +167,7 @@ function formatDate(value?: string): string {
 
 export default function MyrioLearningTab() {
   // --------------------------------------------------------------------------
-  // MAIN NAVIGATION
+  // NAVIGATION
   // --------------------------------------------------------------------------
 
   const [activeSubTab, setActiveSubTab] =
@@ -206,6 +198,9 @@ export default function MyrioLearningTab() {
 
   const [rules, setRules] =
     useState<KnowledgeRule[]>([]);
+
+  const [trainingLoaded, setTrainingLoaded] =
+    useState(false);
 
   const [triggerQuery, setTriggerQuery] =
     useState("");
@@ -239,6 +234,8 @@ export default function MyrioLearningTab() {
   // ==========================================================================
 
   const fetchRules = useCallback(async () => {
+    if (loadingRules) return;
+
     setLoadingRules(true);
     setRuleError("");
 
@@ -266,6 +263,8 @@ export default function MyrioLearningTab() {
           ? data.rules
           : []
       );
+
+      setTrainingLoaded(true);
     } catch (error) {
       console.error(
         "MYRIO Knowledge Fetch Error:",
@@ -280,7 +279,7 @@ export default function MyrioLearningTab() {
     } finally {
       setLoadingRules(false);
     }
-  }, []);
+  }, [loadingRules]);
 
   // ==========================================================================
   // TREND RADAR
@@ -306,12 +305,23 @@ export default function MyrioLearningTab() {
         return;
       }
 
+      if (loadingTrends) return;
+
       setLoadingTrends(true);
       setTrendError("");
-      setTrendRadar([]);
-      setRadarMetadata(undefined);
 
+      // IMPORTANT:
+      // Keep existing results visible while rescanning.
+      // This makes the interface feel significantly faster.
       try {
+        const controller =
+          new AbortController();
+
+        const timeout = window.setTimeout(
+          () => controller.abort(),
+          30000
+        );
+
         const res = await fetch(
           "/api/myrio/learning",
           {
@@ -321,6 +331,7 @@ export default function MyrioLearningTab() {
                 "application/json",
             },
             cache: "no-store",
+            signal: controller.signal,
             body: JSON.stringify({
               action: "TREND_RADAR",
               category: categoryToScan,
@@ -328,8 +339,18 @@ export default function MyrioLearningTab() {
           }
         );
 
-        const data =
-          (await res.json()) as ApiResponse;
+        window.clearTimeout(timeout);
+
+        let data: ApiResponse;
+
+        try {
+          data =
+            (await res.json()) as ApiResponse;
+        } catch {
+          throw new Error(
+            "MYRIO returned an unreadable response."
+          );
+        }
 
         if (!res.ok || !data.success) {
           throw new Error(
@@ -338,9 +359,12 @@ export default function MyrioLearningTab() {
           );
         }
 
-        if (!Array.isArray(data.radar)) {
+        if (
+          !Array.isArray(data.radar) ||
+          data.radar.length === 0
+        ) {
           throw new Error(
-            "Invalid intelligence data received."
+            "MYRIO returned no market candidates."
           );
         }
 
@@ -351,37 +375,36 @@ export default function MyrioLearningTab() {
         setRadarMetadata(
           data.metadata
         );
+
+        // A warning from fallback intelligence
+        // should not be treated as a fatal error.
+        if (data.warning) {
+          setTrendError("");
+        }
       } catch (error) {
         console.error(
           "MYRIO Trend Radar Error:",
           error
         );
 
-        setTrendRadar([]);
-
-        setTrendError(
-          error instanceof Error
-            ? error.message
-            : "Unable to scan the market."
-        );
+        // Do NOT destroy existing successful results.
+        // Only show an error if there are no results.
+        if (trendRadar.length === 0) {
+          setTrendError(
+            error instanceof DOMException &&
+              error.name === "AbortError"
+              ? "MYRIO market scan timed out. Please try again."
+              : error instanceof Error
+              ? error.message
+              : "Unable to scan the market."
+          );
+        }
       } finally {
         setLoadingTrends(false);
       }
     },
-    [trendCategory]
+    [loadingTrends, trendCategory, trendRadar.length]
   );
-
-  // ==========================================================================
-  // INITIAL LOAD
-  // ==========================================================================
-
-  useEffect(() => {
-    void fetchRules();
-    void runTrendRadar(DEFAULT_CATEGORY);
-
-    // Intentionally run once on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // ==========================================================================
   // ADD TRAINING RULE
@@ -408,6 +431,20 @@ export default function MyrioLearningTab() {
     if (!cleanGuideline) {
       setRuleError(
         "Please enter a response guideline."
+      );
+      return;
+    }
+
+    if (cleanTrigger.length > 500) {
+      setRuleError(
+        "Trigger question must be 500 characters or less."
+      );
+      return;
+    }
+
+    if (cleanGuideline.length > 2000) {
+      setRuleError(
+        "Response guideline must be 2000 characters or less."
       );
       return;
     }
@@ -454,6 +491,7 @@ export default function MyrioLearningTab() {
         "New behavioral rule successfully added to MYRIO."
       );
 
+      // Refresh only after successful mutation.
       await fetchRules();
 
       window.setTimeout(() => {
@@ -482,7 +520,7 @@ export default function MyrioLearningTab() {
   const handleDeleteRule = async (
     id: string
   ) => {
-    if (!id) return;
+    if (!id || deletingRuleId) return;
 
     const confirmed =
       window.confirm(
@@ -575,9 +613,9 @@ export default function MyrioLearningTab() {
             </h2>
 
             <p className="text-xs text-gray-400 mt-1 max-w-2xl">
-              Train MYRIO with behavioral knowledge and
-              generate AI-based market assessments for
-              luxury watch categories.
+              Train MYRIO with behavioral knowledge
+              and generate AI-based market
+              assessments for luxury watch categories.
             </p>
           </div>
         </div>
@@ -602,9 +640,13 @@ export default function MyrioLearningTab() {
 
           <button
             type="button"
-            onClick={() =>
-              setActiveSubTab("TRAINING")
-            }
+            onClick={() => {
+              setActiveSubTab("TRAINING");
+
+              if (!trainingLoaded) {
+                void fetchRules();
+              }
+            }}
             className={`flex-1 xl:flex-none px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
               activeSubTab === "TRAINING"
                 ? "bg-[#D4AF37] text-black shadow-lg"
@@ -623,8 +665,6 @@ export default function MyrioLearningTab() {
 
       {activeSubTab === "TRENDS" && (
         <div className="space-y-6">
-          {/* INTRO */}
-
           <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-4">
             <div>
               <h3 className="text-lg font-serif font-bold text-white flex items-center gap-2">
@@ -636,8 +676,8 @@ export default function MyrioLearningTab() {
               </h3>
 
               <p className="text-xs text-gray-400 mt-1">
-                Generate a ranked AI assessment for a
-                specific luxury category.
+                Generate a ranked AI assessment
+                for a specific luxury category.
               </p>
             </div>
 
@@ -646,7 +686,10 @@ export default function MyrioLearningTab() {
               onClick={() =>
                 void runTrendRadar()
               }
-              disabled={loadingTrends}
+              disabled={
+                loadingTrends ||
+                !trendCategory.trim()
+              }
               className="px-4 py-2.5 bg-white/5 hover:bg-[#D4AF37] hover:text-black border border-white/15 text-xs font-bold uppercase rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <RefreshCw
@@ -693,6 +736,7 @@ export default function MyrioLearningTab() {
                     e.key === "Enter" &&
                     !loadingTrends
                   ) {
+                    e.preventDefault();
                     void runTrendRadar();
                   }
                 }}
@@ -731,8 +775,7 @@ export default function MyrioLearningTab() {
             <div className="flex gap-2 flex-wrap mt-4">
               {QUICK_CATEGORIES.map(
                 (item) => {
-                  const Icon =
-                    item.icon;
+                  const Icon = item.icon;
 
                   return (
                     <button
@@ -747,24 +790,19 @@ export default function MyrioLearningTab() {
                           item.category
                         );
                       }}
-                      disabled={
-                        loadingTrends
-                      }
+                      disabled={loadingTrends}
                       className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-[#D4AF37] hover:bg-[#D4AF37]/5 text-[10px] font-bold text-gray-300 hover:text-white transition-all flex items-center gap-1.5 disabled:opacity-50"
                     >
                       <Icon
                         size={11}
                         className="text-[#D4AF37]"
                       />
-
                       {item.label}
                     </button>
                   );
                 }
               )}
             </div>
-
-            {/* ERROR */}
 
             {trendError && (
               <div className="mt-4 flex items-start gap-2 text-[10px] text-red-400 border border-red-500/20 bg-red-500/5 rounded-xl px-3 py-3">
@@ -807,7 +845,8 @@ export default function MyrioLearningTab() {
                 </div>
 
                 <p className="text-xs text-white font-bold mt-2">
-                  AI Market Assessment
+                  {radarMetadata.dataType ||
+                    "AI Market Assessment"}
                 </p>
               </div>
 
@@ -819,8 +858,16 @@ export default function MyrioLearningTab() {
                   </span>
                 </div>
 
-                <p className="text-xs text-amber-400 font-bold mt-2">
-                  External data not connected
+                <p
+                  className={`text-xs font-bold mt-2 ${
+                    radarMetadata.liveExternalData
+                      ? "text-emerald-400"
+                      : "text-amber-400"
+                  }`}
+                >
+                  {radarMetadata.liveExternalData
+                    ? "Connected"
+                    : "External data not connected"}
                 </p>
               </div>
             </div>
@@ -828,7 +875,8 @@ export default function MyrioLearningTab() {
 
           {/* RADAR RESULTS */}
 
-          {loadingTrends ? (
+          {loadingTrends &&
+          trendRadar.length === 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {Array.from({
                 length: 6,
@@ -843,10 +891,8 @@ export default function MyrioLearningTab() {
                   </div>
 
                   <div className="h-5 w-2/3 bg-white/10 rounded mt-5" />
-
                   <div className="h-3 w-full bg-white/5 rounded mt-4" />
                   <div className="h-3 w-4/5 bg-white/5 rounded mt-2" />
-
                   <div className="h-1.5 w-full bg-white/5 rounded mt-5" />
                 </div>
               ))}
@@ -862,9 +908,9 @@ export default function MyrioLearningTab() {
               </h4>
 
               <p className="text-xs text-gray-500 mt-2 max-w-md mx-auto">
-                Enter a luxury category above and
-                ask MYRIO to generate a market
-                assessment.
+                Enter a luxury category above
+                and ask MYRIO to generate a
+                market assessment.
               </p>
             </div>
           ) : (
@@ -889,9 +935,7 @@ export default function MyrioLearningTab() {
                       <div>
                         <div className="flex justify-between items-start gap-3">
                           <span className="px-2.5 py-1 rounded-lg bg-[#D4AF37]/10 text-[#D4AF37] text-xs font-mono font-bold">
-                            #
-                            {item.rank ||
-                              idx + 1}
+                            #{item.rank || idx + 1}
                           </span>
 
                           <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-full border border-emerald-500/20 whitespace-nowrap">
@@ -915,8 +959,6 @@ export default function MyrioLearningTab() {
                           {item.reason}
                         </p>
 
-                        {/* SCORE */}
-
                         <div className="mt-5">
                           <div className="flex justify-between items-center mb-1.5">
                             <span className="text-[8px] uppercase tracking-widest text-gray-600">
@@ -924,9 +966,7 @@ export default function MyrioLearningTab() {
                             </span>
 
                             <span className="text-[9px] text-gray-500">
-                              {getScoreLabel(
-                                score
-                              )}
+                              {getScoreLabel(score)}
                             </span>
                           </div>
 
@@ -963,9 +1003,7 @@ export default function MyrioLearningTab() {
                             </span>
 
                             <span className="font-mono text-[#D4AF37] font-bold text-xs mt-1 block">
-                              {
-                                item.suggestedPrice
-                              }
+                              {item.suggestedPrice}
                             </span>
                           </div>
                         )}
@@ -976,6 +1014,19 @@ export default function MyrioLearningTab() {
               )}
             </div>
           )}
+
+          {/* SCANNING OVERLAY STATUS */}
+
+          {loadingTrends &&
+            trendRadar.length > 0 && (
+              <div className="flex items-center justify-center gap-2 py-2 text-[10px] text-gray-500">
+                <RefreshCw
+                  size={12}
+                  className="animate-spin text-[#D4AF37]"
+                />
+                MYRIO is refreshing market intelligence...
+              </div>
+            )}
 
           {/* DISCLAIMER */}
 
@@ -990,13 +1041,14 @@ export default function MyrioLearningTab() {
                 <span className="text-amber-400 font-bold">
                   Intelligence notice:
                 </span>{" "}
-                Demand scores and pricing shown here are
-                AI-generated assessments, not verified
-                live Google Trends, Amazon, Chrono24,
-                auction, or sales-database measurements.
-                Connect verified external data sources
-                before using these figures for financial,
-                purchasing, or pricing decisions.
+                Demand scores and pricing shown here
+                are AI-generated assessments, not
+                verified live Google Trends, Amazon,
+                Chrono24, auction, or sales-database
+                measurements. Connect verified external
+                data sources before using these figures
+                for financial, purchasing, or pricing
+                decisions.
               </p>
             </div>
           )}
@@ -1009,9 +1061,7 @@ export default function MyrioLearningTab() {
 
       {activeSubTab === "TRAINING" && (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-8">
-          {/* ---------------------------------------------------------------- */}
-          {/* TEACH MYRIO                                                      */}
-          {/* ---------------------------------------------------------------- */}
+          {/* TEACH MYRIO */}
 
           <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl p-6 md:p-8 space-y-6 shadow-2xl h-fit">
             <div className="flex items-center gap-3 border-b border-white/10 pb-4">
@@ -1028,13 +1078,11 @@ export default function MyrioLearningTab() {
                 </h3>
 
                 <p className="text-[10px] text-gray-400">
-                  Add durable response rules to MYRIO&apos;s
-                  knowledge layer.
+                  Add durable response rules to
+                  MYRIO&apos;s knowledge layer.
                 </p>
               </div>
             </div>
-
-            {/* SUCCESS */}
 
             {ruleSuccess && (
               <div className="flex items-start gap-2 p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20 text-emerald-400 text-[10px]">
@@ -1042,14 +1090,9 @@ export default function MyrioLearningTab() {
                   size={14}
                   className="shrink-0"
                 />
-
-                <span>
-                  {ruleSuccess}
-                </span>
+                <span>{ruleSuccess}</span>
               </div>
             )}
-
-            {/* ERROR */}
 
             {ruleError && (
               <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/5 border border-red-500/20 text-red-400 text-[10px]">
@@ -1057,10 +1100,7 @@ export default function MyrioLearningTab() {
                   size={14}
                   className="shrink-0"
                 />
-
-                <span>
-                  {ruleError}
-                </span>
+                <span>{ruleError}</span>
               </div>
             )}
 
@@ -1068,8 +1108,6 @@ export default function MyrioLearningTab() {
               onSubmit={handleAddRule}
               className="space-y-5"
             >
-              {/* TRIGGER */}
-
               <div>
                 <label className="text-[9px] uppercase tracking-widest text-gray-400 block mb-1.5 font-bold">
                   User Question / Trigger
@@ -1089,8 +1127,6 @@ export default function MyrioLearningTab() {
                 />
               </div>
 
-              {/* GUIDELINE */}
-
               <div>
                 <label className="text-[9px] uppercase tracking-widest text-gray-400 block mb-1.5 font-bold">
                   MYRIO Response Guideline
@@ -1099,9 +1135,7 @@ export default function MyrioLearningTab() {
                 <textarea
                   rows={5}
                   maxLength={2000}
-                  value={
-                    responseGuideline
-                  }
+                  value={responseGuideline}
                   onChange={(e) =>
                     setResponseGuideline(
                       e.target.value
@@ -1112,14 +1146,9 @@ export default function MyrioLearningTab() {
                 />
 
                 <div className="text-right text-[8px] text-gray-600 mt-1">
-                  {
-                    responseGuideline.length
-                  }
-                  / 2000
+                  {responseGuideline.length}/2000
                 </div>
               </div>
-
-              {/* TONE + CATEGORY */}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -1130,21 +1159,15 @@ export default function MyrioLearningTab() {
                   <select
                     value={tone}
                     onChange={(e) =>
-                      setTone(
-                        e.target.value
-                      )
+                      setTone(e.target.value)
                     }
                     className="w-full bg-black border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white outline-none focus:border-[#D4AF37]"
                   >
                     {TONES.map(
                       (toneOption) => (
                         <option
-                          key={
-                            toneOption
-                          }
-                          value={
-                            toneOption
-                          }
+                          key={toneOption}
+                          value={toneOption}
                         >
                           {toneOption}
                         </option>
@@ -1170,12 +1193,8 @@ export default function MyrioLearningTab() {
                     {RULE_CATEGORIES.map(
                       (option) => (
                         <option
-                          key={
-                            option.value
-                          }
-                          value={
-                            option.value
-                          }
+                          key={option.value}
+                          value={option.value}
                         >
                           {option.label}
                         </option>
@@ -1184,8 +1203,6 @@ export default function MyrioLearningTab() {
                   </select>
                 </div>
               </div>
-
-              {/* SUBMIT */}
 
               <button
                 type="submit"
@@ -1213,8 +1230,6 @@ export default function MyrioLearningTab() {
               </button>
             </form>
 
-            {/* INFO */}
-
             <div className="p-4 rounded-2xl bg-white/[0.025] border border-white/5">
               <div className="flex items-center gap-2">
                 <ShieldCheck
@@ -1236,9 +1251,7 @@ export default function MyrioLearningTab() {
             </div>
           </div>
 
-          {/* ---------------------------------------------------------------- */}
-          {/* RULE LIST                                                        */}
-          {/* ---------------------------------------------------------------- */}
+          {/* RULE LIST */}
 
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -1278,8 +1291,6 @@ export default function MyrioLearningTab() {
                 />
               </button>
             </div>
-
-            {/* LOADING */}
 
             {loadingRules ? (
               <div className="space-y-3">
@@ -1365,9 +1376,7 @@ export default function MyrioLearningTab() {
                             className="animate-spin"
                           />
                         ) : (
-                          <Trash2
-                            size={14}
-                          />
+                          <Trash2 size={14} />
                         )}
                       </button>
                     </div>
@@ -1378,9 +1387,7 @@ export default function MyrioLearningTab() {
                           When asked:
                         </span>{" "}
                         &quot;
-                        {
-                          rule.triggerQuery
-                        }
+                        {rule.triggerQuery}
                         &quot;
                       </p>
 
@@ -1390,9 +1397,7 @@ export default function MyrioLearningTab() {
                         </p>
 
                         <p className="text-xs text-gray-400 leading-relaxed">
-                          {
-                            rule.responseGuideline
-                          }
+                          {rule.responseGuideline}
                         </p>
                       </div>
                     </div>
