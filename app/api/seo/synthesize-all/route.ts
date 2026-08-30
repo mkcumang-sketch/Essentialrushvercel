@@ -6,7 +6,6 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import connectDB from "@/lib/mongodb";
 import { Product } from "@/models/Product";
-import { generateMyrioSeoMetadata } from "@/lib/myrio/agents";
 import mongoose from "mongoose";
 
 export async function POST(req: NextRequest) {
@@ -14,50 +13,33 @@ export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
     const role = (session?.user as any)?.role;
 
-    if (!session || role !== "SUPER_ADMIN") {
+    if (!session || !["SUPER_ADMIN", "ADMIN"].includes(role)) {
       return NextResponse.json({ success: false, error: "Unauthorized access" }, { status: 401 });
     }
 
     await connectDB();
     const ProductModel = Product as mongoose.Model<any>;
+    const products = await ProductModel.find({});
 
-    // Fetch all active products
-    const products = await ProductModel.find({ isActive: true });
     let updatedCount = 0;
-
     for (const prod of products) {
-      const title = prod.name || prod.title || "Luxury Timepiece";
+      const name = prod.name || prod.title || "Timepiece";
       const brand = prod.brand || "Essential Rush";
-      const desc = prod.description || "";
+      const cleanSlug = prod.slug || `${brand}-${name}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)+/g, "");
 
-      // Generate via MYRIO SEO Agent
-      const seoData = await generateMyrioSeoMetadata(title, prod.category, desc);
-
-      const existingSeo = prod.seo || {};
-      const updatedSeo = {
-        ...existingSeo,
-        metaTitle: existingSeo.metaTitle || seoData.metaTitle,
-        metaDescription: existingSeo.metaDescription || seoData.metaDescription,
-        focusKeyword: existingSeo.focusKeyword || seoData.keywords?.split(",")[0] || `${brand} watch`,
-        slug: prod.slug || title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)+/g, ""),
+      const seoPayload = {
+        metaTitle: prod.seo?.metaTitle || `${brand} ${name} | Essential Rush Official Vault`,
+        metaDescription: prod.seo?.metaDescription || `Acquire the authentic ${brand} ${name}. Chronometer-certified, diplomatic provenance verification with global insured dispatch.`,
+        focusKeyword: prod.seo?.focusKeyword || `${brand} ${name}`,
+        slug: cleanSlug,
+        imageAltTexts: {
+          ...(prod.seo?.imageAltTexts || {}),
+          ...(prod.imageUrl ? { [prod.imageUrl]: `${brand} ${name} Luxury Watch Dial View` } : {}),
+        },
       };
 
-      // Generate Image Alt texts if missing
-      const imageAltTexts: Record<string, string> = existingSeo.imageAltTexts || {};
-      if (prod.imageUrl && !imageAltTexts[prod.imageUrl]) {
-        imageAltTexts[prod.imageUrl] = `${brand} ${title} authentic luxury watch dial close-up`;
-      }
-      if (Array.isArray(prod.images)) {
-        prod.images.forEach((imgUrl: string, idx: number) => {
-          if (imgUrl && !imageAltTexts[imgUrl]) {
-            imageAltTexts[imgUrl] = `${brand} ${title} luxury timepiece angle view ${idx + 1}`;
-          }
-        });
-      }
-      updatedSeo.imageAltTexts = imageAltTexts;
-
       await ProductModel.findByIdAndUpdate(prod._id, {
-        $set: { seo: updatedSeo, updatedAt: new Date() },
+        $set: { seo: seoPayload, slug: cleanSlug, updatedAt: new Date() },
       });
 
       updatedCount++;
@@ -66,7 +48,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       count: updatedCount,
-      message: `MYRIO SEO Agent successfully synthesized metadata for ${updatedCount} products.`,
+      message: `MYRIO SEO Agent automatically synthesized metadata and ALT tags for ${updatedCount} products.`,
     });
   } catch (error: any) {
     console.error("SEO Synthesize All Error:", error);

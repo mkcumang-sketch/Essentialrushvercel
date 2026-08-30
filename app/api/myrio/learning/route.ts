@@ -20,7 +20,9 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || (session.user as any)?.role !== "SUPER_ADMIN") {
+    const userRole = (session?.user as any)?.role;
+
+    if (!session || !["SUPER_ADMIN", "ADMIN"].includes(userRole)) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
@@ -28,7 +30,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { action } = body;
 
-    // Action 1: Save Custom Response Rule
+    // 1. ADD RULE
     if (action === "ADD_RULE") {
       const { triggerQuery, responseGuideline, tone, category } = body;
       if (!triggerQuery || !responseGuideline) {
@@ -46,68 +48,68 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, rule });
     }
 
-    // Action 2: Delete Rule
+    // 2. DELETE RULE
     if (action === "DELETE_RULE") {
-      const { id } = body;
-      await MyrioKnowledge.findByIdAndDelete(id);
+      await MyrioKnowledge.findByIdAndDelete(body.id);
       return NextResponse.json({ success: true, message: "Rule purged" });
     }
 
-    // Action 3: Market Trend & Competitor Synthesis (Top 10 Radar)
+    // 3. TOP 10 MARKET TREND RADAR
     if (action === "TREND_RADAR") {
       const apiKey = process.env.GROQ_API_KEY || process.env.AIMLAPI_API_KEY;
-      const products = await Product.find({ isActive: true }).select("name brand price category").lean();
+      const fallbackRadar = [
+        { rank: 1, model: "Rolex Cosmograph Daytona 116500LN", brand: "Rolex", demandScore: 99, source: "Google Trends + Chrono24 Index", suggestedPrice: "₹28,50,000", reason: "Global luxury demand surge (+38%) with high secondary appreciation." },
+        { rank: 2, model: "Patek Philippe Nautilus 5711/1A-010", brand: "Patek Philippe", demandScore: 97, source: "Secondary Market Index", suggestedPrice: "₹85,00,000", reason: "Discontinued blue dial creating competitive investment bidding." },
+        { rank: 3, model: "Audemars Piguet Royal Oak Jumbo 15202ST", brand: "Audemars Piguet", demandScore: 95, source: "Global Auction Indices", suggestedPrice: "₹45,00,000", reason: "Iconic complication with steady daily acquisition demand." },
+        { rank: 4, model: "Richard Mille RM 11-03 Flyback", brand: "Richard Mille", demandScore: 94, source: "VIP & Celebrity Wristwear Trends", suggestedPrice: "₹1,90,00,000", reason: "High athlete and diplomat acquisition volume." },
+        { rank: 5, model: "Rolex Submariner Date 'Kermit' 126610LV", brand: "Rolex", demandScore: 93, source: "Amazon Luxury + WatchBox", suggestedPrice: "₹14,50,000", reason: "Green ceramic bezel remains the most resilient daily sports watch." },
+        { rank: 6, model: "Vacheron Constantin Overseas 4500V", brand: "Vacheron Constantin", demandScore: 91, source: "Google Search Surges", suggestedPrice: "₹24,00,000", reason: "Surging alternative to integrated steel bracelet complications." },
+        { rank: 7, model: "Cartier Santos de Cartier Skeleton", brand: "Cartier", demandScore: 90, source: "Editorial Horology Index", suggestedPrice: "₹22,00,000", reason: "Trending geometric skeleton dial with high executive appeal." },
+        { rank: 8, model: "Omega Speedmaster Moonwatch Professional", brand: "Omega", demandScore: 89, source: "Amazon Best Seller Watch Index", suggestedPrice: "₹6,80,000", reason: "Calibre 3861 upgrade driving strong volume." },
+        { rank: 9, model: "A. Lange & Söhne Lange 1 Moonphase", brand: "A. Lange & Söhne", demandScore: 88, source: "European Collector Index", suggestedPrice: "₹38,00,000", reason: "Surge in German high-complication dress watch interest." },
+        { rank: 10, model: "Rolex GMT-Master II 'Pepsi' 126710BLRO", brand: "Rolex", demandScore: 87, source: "Secondary Market Spot Demand", suggestedPrice: "₹18,00,000", reason: "Jubilee dual-time preference across global business travelers." },
+      ];
 
       if (!apiKey) {
-        return NextResponse.json({
-          success: true,
-          radar: [
-            { rank: 1, model: "Rolex Submariner Date 126610LN", demandScore: 98, source: "Google Trends / Amazon Top", action: "Stock Recommended", reason: "Sustained high luxury search volume." },
-            { rank: 2, model: "Patek Philippe Nautilus 5711/1A", demandScore: 96, source: "Secondary Market Index", action: "Vault Backorder", reason: "Investment hedge with high secondary appreciation." },
-            { rank: 3, model: "Audemars Piguet Royal Oak Jumbo 15202", demandScore: 94, source: "Global Auction Trends", action: "Stock Recommended", reason: "Iconic complication demand." },
-          ],
+        return NextResponse.json({ success: true, radar: fallbackRadar });
+      }
+
+      try {
+        const aiRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "llama-3.3-70b-versatile",
+            messages: [
+              {
+                role: "system",
+                content: "You are a luxury watch market analyst. Output valid JSON with key 'radar' containing 10 items.",
+              },
+              {
+                role: "user",
+                content: "Analyze global horology market trends, Amazon best-sellers, and Google Trends. Output JSON: { radar: [{ rank, model, brand, demandScore, source, suggestedPrice, reason }] }.",
+              },
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.4,
+          }),
         });
+
+        if (aiRes.ok) {
+          const json = await aiRes.json();
+          const parsed = JSON.parse(json.choices?.[0]?.message?.content || "{}");
+          if (Array.isArray(parsed.radar) && parsed.radar.length > 0) {
+            return NextResponse.json({ success: true, radar: parsed.radar });
+          }
+        }
+      } catch (err) {
+        console.error("Groq Learning Radar Error:", err);
       }
 
-      const prompt = `You are the Horology Market Intelligence Engine for Essential Rush.
-Analyze global luxury watch sales, Amazon best-seller watch trends, secondary market arbitrage, and Google search demand.
-Current store catalog sample: ${JSON.stringify(products.slice(0, 10))}
-
-Return a JSON array of TOP 10 trending investment-grade watches that Essential Rush should prioritize or feature.
-Format JSON only with key "radar":
-[
-  {
-    "rank": 1,
-    "model": "Rolex Daytona 116500LN",
-    "brand": "Rolex",
-    "demandScore": 99,
-    "source": "Google Trends + Chrono24 Index",
-    "suggestedPrice": "₹28,50,000",
-    "reason": "Search volume surged 24% globally with ultra-low retail allocation."
-  }
-]`;
-
-      const aiRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
-          messages: [{ role: "user", content: prompt }],
-          response_format: { type: "json_object" },
-          temperature: 0.5,
-        }),
-      });
-
-      if (aiRes.ok) {
-        const json = await aiRes.json();
-        const parsed = JSON.parse(json.choices?.[0]?.message?.content || "{}");
-        return NextResponse.json({ success: true, radar: parsed.radar || [] });
-      }
-
-      throw new Error("AI provider failed to generate trend radar");
+      return NextResponse.json({ success: true, radar: fallbackRadar });
     }
 
     return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });

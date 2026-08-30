@@ -8,10 +8,23 @@ import connectDB from "@/lib/mongodb";
 import { Product } from "@/models/Product";
 import mongoose from "mongoose";
 
+// GET ALL PRODUCTS OR SINGLE PRODUCT BY ID/SLUG
 export async function GET(req: NextRequest) {
   try {
     await connectDB();
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
     const ProductModel = Product as mongoose.Model<any>;
+
+    if (id) {
+      const query = mongoose.Types.ObjectId.isValid(id) ? { _id: id } : { slug: id };
+      const product = await ProductModel.findOne(query).lean();
+      if (!product) {
+        return NextResponse.json({ success: false, error: "Product not found" }, { status: 404 });
+      }
+      return NextResponse.json({ success: true, data: product, product });
+    }
+
     const products = await ProductModel.find({}).sort({ priority: -1, createdAt: -1 }).lean();
     return NextResponse.json({ success: true, data: products });
   } catch (error: any) {
@@ -19,12 +32,13 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// SAVE / UPDATE PRODUCT (POST & PUT)
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     const role = (session?.user as any)?.role;
 
-    if (!session || role !== "SUPER_ADMIN") {
+    if (!session || !["SUPER_ADMIN", "ADMIN"].includes(role)) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
@@ -34,6 +48,7 @@ export async function POST(req: NextRequest) {
 
     const {
       _id,
+      id,
       name,
       brand,
       category,
@@ -49,51 +64,38 @@ export async function POST(req: NextRequest) {
       seo,
     } = body;
 
+    const targetId = _id || id;
     if (!name || !brand || !price) {
       return NextResponse.json({ success: false, error: "Missing required product fields" }, { status: 400 });
     }
 
+    const payload = {
+      name,
+      brand,
+      category: category || "Investment Grade",
+      price: Number(price),
+      offerPrice: Number(offerPrice) || Number(price),
+      stock: Number(stock) || 0,
+      imageUrl: imageUrl || (images && images[0]) || "",
+      images: Array.isArray(images) ? images.filter(Boolean) : [],
+      priority: Number(priority) || 0,
+      badge: badge || "",
+      description: description || "",
+      amazonDetails: amazonDetails || [],
+      seo: seo || {},
+      isActive: true,
+      updatedAt: new Date(),
+    };
+
     let savedProduct;
-    if (_id && mongoose.Types.ObjectId.isValid(_id)) {
+    if (targetId && mongoose.Types.ObjectId.isValid(targetId)) {
       savedProduct = await ProductModel.findByIdAndUpdate(
-        _id,
-        {
-          $set: {
-            name,
-            brand,
-            category: category || "Investment Grade",
-            price: Number(price),
-            offerPrice: Number(offerPrice) || Number(price),
-            stock: Number(stock) || 0,
-            imageUrl: imageUrl || (images && images[0]) || "",
-            images: Array.isArray(images) ? images.filter(Boolean) : [],
-            priority: Number(priority) || 0,
-            badge: badge || "",
-            description: description || "",
-            amazonDetails: amazonDetails || [],
-            seo: seo || {},
-            isActive: true,
-          },
-        },
+        targetId,
+        { $set: payload },
         { new: true, upsert: true }
       );
     } else {
-      savedProduct = await ProductModel.create({
-        name,
-        brand,
-        category: category || "Investment Grade",
-        price: Number(price),
-        offerPrice: Number(offerPrice) || Number(price),
-        stock: Number(stock) || 0,
-        imageUrl: imageUrl || (images && images[0]) || "",
-        images: Array.isArray(images) ? images.filter(Boolean) : [],
-        priority: Number(priority) || 0,
-        badge: badge || "",
-        description: description || "",
-        amazonDetails: amazonDetails || [],
-        seo: seo || {},
-        isActive: true,
-      });
+      savedProduct = await ProductModel.create(payload);
     }
 
     return NextResponse.json({ success: true, data: savedProduct });
@@ -103,18 +105,30 @@ export async function POST(req: NextRequest) {
   }
 }
 
+export async function PUT(req: NextRequest) {
+  return POST(req);
+}
+
+// DELETE PRODUCT
 export async function DELETE(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     const role = (session?.user as any)?.role;
 
-    if (!session || role !== "SUPER_ADMIN") {
+    if (!session || !["SUPER_ADMIN", "ADMIN"].includes(role)) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
     await connectDB();
     const { searchParams } = new URL(req.url);
-    const id = searchParams.get("id");
+    let id = searchParams.get("id");
+
+    if (!id) {
+      try {
+        const body = await req.json();
+        id = body?.id || body?._id;
+      } catch {}
+    }
 
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json({ success: false, error: "Invalid product ID" }, { status: 400 });
