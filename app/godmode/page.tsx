@@ -1,15 +1,9 @@
 "use client";
 
-import React, {
-  useState,
-  useEffect,
-  useCallback,
-} from "react";
-
-import { AnimatePresence } from "framer-motion";
-import MyrioHealthTab from "@/components/godmode/tabs_temp/MyrioHealthTab";
-import MyrioLearningTab from "@/components/godmode/tabs_temp/MyrioLearningTab";
-
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import dynamic from "next/dynamic";
+import { useSession, signIn, signOut } from "next-auth/react";
 import {
   BarChart3,
   Package,
@@ -19,9 +13,7 @@ import {
   Layout,
   Link as LinkIcon,
   ShieldCheck,
-  BellRing,
   Truck,
-  Gift,
   Zap,
   Activity,
   ShieldAlert,
@@ -34,75 +26,103 @@ import {
   Archive,
   Brain,
   ChevronRight,
+  Search,
+  Sliders,
+  CheckCircle2,
+  Terminal,
+  LogOut,
 } from "lucide-react";
 
-import dynamic from "next/dynamic";
-import { useSession, signIn, signOut } from "next-auth/react";
-import BrandAmbassadors from "@/components/godmode/tabs_temp/BrandAmbassadorsTab";
-import CustomersCrm from "@/components/godmode/tabs_temp/CustomersCrm";
-import CouponMarketingTab from "@/components/godmode/tabs_temp/CouponMarketing";
+// TABS IMPORTS
 import DashboardTab from "@/components/godmode/tabs_temp/DashboardTab";
+import AiCommandCenterTab from "@/components/godmode/tabs_temp/AiCommandCenterTab";
+import MyrioLearningTab from "@/components/godmode/tabs_temp/MyrioLearningTab";
+import MyrioHealthTab from "@/components/godmode/tabs_temp/MyrioHealthTab";
+import MyrioArchiveTab from "@/components/godmode/tabs_temp/MyrioArchiveTab";
 import InventoryTab from "@/components/godmode/tabs_temp/InventoryTab";
 import OrderTrackerTab from "@/components/godmode/tabs_temp/OrderTrackerTab";
-import SeoEngineTab from "@/components/godmode/tabs_temp/SeoEngineTab";
-import LegalPagesTab from "@/components/godmode/tabs_temp/LegalPagesTab";
-import ReviewsTab from "@/components/godmode/tabs_temp/ReviewsTab";
-import MyrioArchiveTab from "@/components/godmode/tabs_temp/MyrioArchiveTab";
-import SalesForceTab from "@/components/godmode/tabs_temp/SalesForceTab";
-import SecurityTab from "@/components/godmode/tabs_temp/SecurityTab";
+import CustomersCrm from "@/components/godmode/tabs_temp/CustomersCrm";
+import CouponMarketingTab from "@/components/godmode/tabs_temp/CouponMarketing";
 import WebsiteBuilderTab from "@/components/godmode/tabs_temp/WebsiteBuilderTab";
+import BrandAmbassadors from "@/components/godmode/tabs_temp/BrandAmbassadorsTab";
+import ReviewsTab from "@/components/godmode/tabs_temp/ReviewsTab";
+import SeoEngineTab from "@/components/godmode/tabs_temp/SeoEngineTab";
+import SalesForceTab from "@/components/godmode/tabs_temp/SalesForceTab";
 import WithdrawalTab from "@/components/godmode/tabs_temp/WithdrawalTab";
+import LegalPagesTab from "@/components/godmode/tabs_temp/LegalPagesTab";
+import SecurityTab from "@/components/godmode/tabs_temp/SecurityTab";
 
-import AiCommandCenterTab from "@/components/godmode/tabs_temp/AiCommandCenterTab";
-
-// =====================================================
 // TYPES
-// =====================================================
 import type {
   HeroSlide,
   AboutConfig,
   UiConfig,
-
   SocialLinks,
   CorporateInfo,
   LegalPage,
   ManualReview,
   WatchFormState,
-  CouponForm,
   AgentForm,
-  PricingRules,
 } from "@/types/godmode";
 
-// =====================================================
-// MODULES
-// =====================================================
+// ============================================================================
+// MODULE ARCHITECTURE & CATEGORIZATION
+// ============================================================================
+interface ModuleItem {
+  id: string;
+  icon: any;
+  label: string;
+  badge?: string;
+}
 
-const MODULES = [
-  { id: "FULL_DASHBOARD", icon: BarChart3, label: "Main Dashboard" },
-  { id: "MYRIO_ARCHIVE", icon: Archive, label: "MYRIO Data Lifecycle" },
-  { id: "AI_COMMAND_CENTER", icon: Zap, label: "AI Command Center" },
-  { id: "INVENTORY", icon: Package, label: "Products & Inventory" },
-  { id: "COUPONS", label: "Coupons & Offers", icon: Tag },
-  { id: "ORDER_TRACKER", icon: Truck, label: "Manage Orders" },
-  { id: "MYRIO_LEARNING", icon: Brain, label: "MYRIO Learning Center" },
-  { id: "CRM", icon: Users, label: "Customers & CRM" },
-  { id: "PAGE_BUILDER", icon: Layout, label: "Website Builder" },
-  { id: "AMBASSADORS", icon: Award, label: "Brand Ambassadors" },
-  { id: "SEO_ENGINE", icon: Globe, label: "SEO Command Center" },
-  { id: "LEGAL_PAGES", icon: FileText, label: "Legal Policies" },
-  { id: "MYRIO_HEALTH", icon: Activity, label: "MYRIO Self-Health" },
-  { id: "REVIEWS", icon: Star, label: "Customer Reviews" },
-  { id: "SALES_FORCE", icon: LinkIcon, label: "Affiliates & Partners" },
-  { id: "WITHDRAWALS", icon: Landmark, label: "Withdrawal Requests" },
-  { id: "SECURITY", icon: ShieldAlert, label: "Security & Maintenance" },
+interface ModuleCategory {
+  category: string;
+  modules: ModuleItem[];
+}
+
+const MODULE_CATEGORIES: ModuleCategory[] = [
+  {
+    category: "Command & Intelligence",
+    modules: [
+      { id: "FULL_DASHBOARD", icon: BarChart3, label: "Overview & Analytics" },
+      { id: "AI_COMMAND_CENTER", icon: Zap, label: "AI Command Console", badge: "MYRIO" },
+      { id: "MYRIO_LEARNING", icon: Brain, label: "Learning & Trends" },
+      { id: "MYRIO_HEALTH", icon: Activity, label: "Self-Health Diagnostics" },
+      { id: "MYRIO_ARCHIVE", icon: Archive, label: "Data Lifecycle Archive" },
+    ],
+  },
+  {
+    category: "Commerce & Logistics",
+    modules: [
+      { id: "INVENTORY", icon: Package, label: "Vault Inventory" },
+      { id: "ORDER_TRACKER", icon: Truck, label: "Order Management" },
+      { id: "CRM", icon: Users, label: "Patron Directory (CRM)" },
+      { id: "COUPONS", icon: Tag, label: "Privilege Codes & Offers" },
+      { id: "WITHDRAWALS", icon: Landmark, label: "Withdrawal Requests" },
+    ],
+  },
+  {
+    category: "Storefront & Identity",
+    modules: [
+      { id: "PAGE_BUILDER", icon: Layout, label: "Storefront CMS" },
+      { id: "SEO_ENGINE", icon: Globe, label: "Search Visibility (SEO)" },
+      { id: "AMBASSADORS", icon: Award, label: "Brand Ambassadors" },
+      { id: "REVIEWS", icon: Star, label: "Patron Reviews" },
+    ],
+  },
+  {
+    category: "Security & Governance",
+    modules: [
+      { id: "SALES_FORCE", icon: LinkIcon, label: "Affiliates & Partners" },
+      { id: "LEGAL_PAGES", icon: FileText, label: "Compliance & Policies" },
+      { id: "SECURITY", icon: ShieldAlert, label: "Perimeter Security" },
+    ],
+  },
 ];
 
-const DEFAULT_GALLERY: string[] = [];
-
-// =====================================================
-// PREMIUM UPLOAD NODE
-// =====================================================
-
+// ============================================================================
+// UPLOAD NODE COMPONENT
+// ============================================================================
 interface PremiumUploadNodeProps {
   onUploadSuccess: (url: string) => void;
   placeholder?: string;
@@ -117,14 +137,10 @@ const PremiumUploadNode = ({
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState("");
-
-  const [inputId] = useState(
-    `up-${Math.random().toString(36).substring(2, 11)}`
-  );
+  const [inputId] = useState(`up-${Math.random().toString(36).substring(2, 9)}`);
 
   const handleUpload = async (file: File) => {
     if (!file) return;
-
     setUploading(true);
     onUploadStateChange?.(true);
 
@@ -132,18 +148,11 @@ const PremiumUploadNode = ({
     formData.append("file", file);
 
     try {
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
       const data = await res.json();
-
       if (data.success && data.url) {
         setPreview(data.url);
         onUploadSuccess(data.url);
-      } else {
-        console.error(`Upload failed: ${data.error || "Check Cloudinary Keys"}`);
       }
     } catch (error) {
       console.error("Upload Error:", error);
@@ -164,15 +173,14 @@ const PremiumUploadNode = ({
       onDragLeave={() => setDragging(false)}
       onDrop={(e) => {
         e.preventDefault();
-        e.stopPropagation();
         setDragging(false);
         const file = e.dataTransfer.files?.[0];
         if (file) handleUpload(file);
       }}
-      className={`w-28 h-28 shrink-0 rounded-2xl border-2 border-dashed transition-all flex flex-col items-center justify-center text-center p-3 cursor-pointer group ${
+      className={`w-28 h-28 shrink-0 rounded-2xl border transition-all flex flex-col items-center justify-center p-3 cursor-pointer group ${
         dragging
           ? "border-[#D4AF37] bg-[#D4AF37]/10"
-          : "border-white/20 bg-black/40 backdrop-blur-md"
+          : "border-white/10 bg-white/[0.02] hover:border-[#D4AF37]/50"
       }`}
     >
       <input
@@ -185,66 +193,41 @@ const PremiumUploadNode = ({
           if (file) handleUpload(file);
         }}
       />
-
-      <label
-        htmlFor={inputId}
-        className="w-full h-full flex flex-col items-center justify-center cursor-pointer"
-      >
+      <label htmlFor={inputId} className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
         {uploading ? (
-          <div className="flex flex-col items-center gap-2">
-            <RefreshCcw size={22} className="animate-spin text-[#D4AF37]" />
-            <span className="text-[9px] text-gray-400">Uploading...</span>
-          </div>
+          <RefreshCcw size={18} className="animate-spin text-[#D4AF37]" />
         ) : preview ? (
           isVideo ? (
-            <video
-              src={preview}
-              className="w-full h-full object-cover rounded-xl"
-              muted
-              autoPlay
-              loop
-            />
+            <video src={preview} className="w-full h-full object-cover rounded-xl" muted autoPlay loop />
           ) : (
-            <img
-              src={preview}
-              alt="Uploaded preview"
-              className="w-full h-full object-cover rounded-xl"
-            />
+            <img src={preview} alt="Uploaded" className="w-full h-full object-cover rounded-xl" />
           )
         ) : (
-          <>
-            <span className="text-xl mb-2">{dragging ? "↓" : "↑"}</span>
-            <span className="text-[9px] text-gray-400">
-              {dragging ? "Drop File" : `Upload ${placeholder}`}
-            </span>
-          </>
+          <span className="text-[9px] uppercase tracking-wider text-gray-500 font-bold group-hover:text-gray-300">
+            {placeholder}
+          </span>
         )}
       </label>
     </div>
   );
 };
 
-// =====================================================
-// ADMIN DASHBOARD
-// =====================================================
-
+// ============================================================================
+// ADMIN CONSOLE CORE
+// ============================================================================
 function AdminDashboard() {
   const { data: session, status } = useSession();
 
-  const [isImageUploading, setIsImageUploading] = useState(false);
   const [activeTab, setActiveTab] = useState("FULL_DASHBOARD");
-  const [dashboardView, setDashboardView] = useState<"orders" | "abandoned">(
-    "orders"
-  );
+  const [navSearch, setNavSearch] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
+  const [dashboardView, setDashboardView] = useState<"orders" | "abandoned">("orders");
+  const [systemLogs, setSystemLogs] = useState<string[]>(["Core initialization completed."]);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
-  const [systemLogs, setSystemLogs] = useState<string[]>([
-    "System initialized. Production environment connected.",
-  ]);
+  const [vipDispatchingKey, setVipDispatchingKey] = useState<string | null>(null);
+
+  // Live Data States
   const [leads, setLeads] = useState<any[]>([]);
-  const [vipDispatchingKey, setVipDispatchingKey] = useState<string | null>(
-    null
-  );
   const [orders, setOrders] = useState<any[]>([]);
   const [agents, setAgents] = useState<any[]>([]);
   const [liveWatches, setLiveWatches] = useState<any[]>([]);
@@ -253,91 +236,17 @@ function AdminDashboard() {
   const [customers, setCustomers] = useState<any[]>([]);
   const [fullAnalytics, setFullAnalytics] = useState<any>(null);
   const [celebs, setCelebs] = useState<any[]>([]);
-  const [newCeleb, setNewCeleb] = useState({
+  const [isImageUploading, setIsImageUploading] = useState(false);
+
+  // Form States
+  const [newCeleb, setNewCeleb] = useState({ name: "", title: "", imageUrl: "" });
+  const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
+  const [agentForm, setAgentForm] = useState<AgentForm>({
     name: "",
-    title: "",
-    imageUrl: "",
-  });
-
-  const [heroSlides, setHeroSlides] = useState<HeroSlide[]>([
-    {
-      id: 1,
-      type: "video",
-      url: "",
-      heading: "Welcome to Essential",
-    },
-  ]);
-
-  const [aboutConfig, setAboutConfig] = useState<AboutConfig>({
-    content: "",
-    alignment: "center",
-    style: "luxury",
-    boldWords: "",
-  });
-
-  const [galleryImages, setGalleryImages] =
-    useState<string[]>(DEFAULT_GALLERY);
-
-  const [promoVideos, setPromoVideos] = useState<string[]>([
-    "",
-    "",
-    "",
-    "",
-    "",
-  ]);
-
-  const [uiConfig, setUiConfig] = useState<UiConfig>({
-    primaryColor: "#D4AF37",
-    bgColor: "#050505",
-    fontFamily: "serif",
-    buttonRadius: "full",
-  });
-
-  const [categories, setCategories] = useState<string[]>([
-    "Investment Grade",
-    "Rare Vintage",
-    "Modern Complications",
-  ]);
-
-  const [faqs, setFaqs] = useState([
-    { q: "Are these authentic?", a: "Yes, 100% verified." },
-  ]);
-
-  const [socialLinks, setSocialLinks] = useState<SocialLinks>({
-    instagram: "",
-    facebook: "",
-    twitter: "",
-    youtube: "",
-    linkedin: "",
-  });
-
-  const [corporateInfo, setCorporateInfo] = useState<CorporateInfo>({
-    companyName: "Essential Rush Pvt Ltd",
-    address: "",
-    phone1: "",
-    phone2: "",
     email: "",
-  });
-
-  const [legalPages, setLegalPages] = useState<LegalPage[]>([
-    {
-      id: "1",
-      title: "Privacy Policy",
-      slug: "privacy-policy",
-      content: "",
-    },
-  ]);
-
-  const [activeLegalPageId, setActiveLegalPageId] = useState("1");
-
-  const [manualReview, setManualReview] = useState<ManualReview>({
-    userName: "",
-    comment: "",
-    rating: 5,
-    product: "GLOBAL",
-    visibility: "public",
-    isAdminGenerated: true,
-    media: [],
+    code: "",
+    tier: "Partner",
+    commissionRate: 5,
   });
 
   const [watchForm, setWatchForm] = useState<WatchFormState>({
@@ -362,50 +271,60 @@ function AdminDashboard() {
     transitFee: "0",
     taxPercentage: "18",
     taxInclusive: true,
-    seo: {
-      metaTitle: "",
-      metaDescription: "",
-      focusKeyword: "",
-      slug: "",
-      noindex: false,
-      imageAltTexts: {},
-    },
+    seo: { metaTitle: "", metaDescription: "", focusKeyword: "", slug: "", noindex: false, imageAltTexts: {} },
   });
 
-  const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
-
-  const [agentForm, setAgentForm] = useState<AgentForm>({
-    name: "",
+  const [heroSlides, setHeroSlides] = useState<HeroSlide[]>([
+    { id: 1, type: "video", url: "", heading: "Masterpieces" },
+  ]);
+  const [aboutConfig, setAboutConfig] = useState<AboutConfig>({
+    content: "",
+    alignment: "center",
+    style: "luxury",
+    boldWords: "",
+  });
+  const [galleryImages, setGalleryImages] = useState<string[]>([]);
+  const [promoVideos, setPromoVideos] = useState<string[]>(["", "", "", "", ""]);
+  const [uiConfig, setUiConfig] = useState<UiConfig>({
+    primaryColor: "#D4AF37",
+    bgColor: "#050505",
+    fontFamily: "serif",
+    buttonRadius: "full",
+  });
+  const [categories, setCategories] = useState<string[]>(["Investment Grade", "Rare Vintage"]);
+  const [faqs, setFaqs] = useState([{ q: "Are these authentic?", a: "100% verified." }]);
+  const [socialLinks, setSocialLinks] = useState<SocialLinks>({ instagram: "", facebook: "", twitter: "", youtube: "", linkedin: "" });
+  const [corporateInfo, setCorporateInfo] = useState<CorporateInfo>({
+    companyName: "Essential Rush Pvt Ltd",
+    address: "",
+    phone1: "",
+    phone2: "",
     email: "",
-    code: "",
-    tier: "Partner",
-    commissionRate: 5,
+  });
+  const [legalPages, setLegalPages] = useState<LegalPage[]>([
+    { id: "1", title: "Privacy Policy", slug: "privacy-policy", content: "" },
+  ]);
+  const [activeLegalPageId, setActiveLegalPageId] = useState("1");
+  const [manualReview, setManualReview] = useState<ManualReview>({
+    userName: "",
+    comment: "",
+    rating: 5,
+    product: "GLOBAL",
+    visibility: "public",
+    isAdminGenerated: true,
+    media: [],
   });
 
   const addLog = useCallback((msg: string) => {
     setSystemLogs((prev) => [msg, ...prev].slice(0, 8));
   }, []);
 
-  const handleAdminLogout = async () => {
-    try {
-      localStorage.clear();
-      sessionStorage.clear();
-    } catch (error) {
-      console.error(error);
-    }
-    await signOut({ callbackUrl: "/" });
-  };
-
+  // Sync Database
   const fetchDashboardData = useCallback(
     async (silent = false) => {
-      if (!silent) {
-        setIsSyncing(true);
-        addLog("Syncing real-time database modules...");
-      }
-
+      if (!silent) setIsSyncing(true);
       try {
         const ts = Date.now();
-
         const [
           resLeads,
           resCms,
@@ -418,65 +337,27 @@ function AdminDashboard() {
           resCust,
           resCelebs,
         ] = await Promise.all([
-          fetch(`/api/abandoned-carts?t=${ts}`).then((r) =>
-            r.ok ? r.json() : { leads: [] }
-          ),
-          fetch(`/api/cms?t=${ts}`).then((r) =>
-            r.ok ? r.json() : { data: null }
-          ),
-          fetch(`/api/products?t=${ts}`).then((r) =>
-            r.ok ? r.json() : { data: [] }
-          ),
-          fetch(`/api/agents?t=${ts}`).then((r) =>
-            r.ok ? r.json() : { data: [] }
-          ),
-          fetch(`/api/orders?t=${ts}`).then((r) =>
-            r.ok ? r.json() : { data: [] }
-          ),
-          fetch(`/api/dashboard/full-analytics?t=${ts}`).then((r) =>
-            r.ok ? r.json() : null
-          ),
-          fetch(`/api/reviews?admin=true&t=${ts}`).then((r) =>
-            r.ok ? r.json() : { data: [] }
-          ),
-          fetch(`/api/coupons?t=${ts}`).then((r) =>
-            r.ok ? r.json() : { data: [] }
-          ),
-          fetch(`/api/customers?t=${ts}`)
-            .then((r) => (r.ok ? r.json() : { data: [] }))
-            .catch(() => ({ data: [] })),
-          fetch(`/api/celebrity?t=${ts}`).then((r) =>
-            r.ok ? r.json() : { data: [] }
-          ),
+          fetch(`/api/abandoned-carts?t=${ts}`).then((r) => (r.ok ? r.json() : { leads: [] })),
+          fetch(`/api/cms?t=${ts}`).then((r) => (r.ok ? r.json() : { data: null })),
+          fetch(`/api/products?t=${ts}`).then((r) => (r.ok ? r.json() : { data: [] })),
+          fetch(`/api/agents?t=${ts}`).then((r) => (r.ok ? r.json() : { data: [] })),
+          fetch(`/api/orders?t=${ts}`).then((r) => (r.ok ? r.json() : { data: [] })),
+          fetch(`/api/dashboard/full-analytics?t=${ts}`).then((r) => (r.ok ? r.json() : null)),
+          fetch(`/api/reviews?admin=true&t=${ts}`).then((r) => (r.ok ? r.json() : { data: [] })),
+          fetch(`/api/coupons?t=${ts}`).then((r) => (r.ok ? r.json() : { data: [] })),
+          fetch(`/api/customers?t=${ts}`).then((r) => (r.ok ? r.json() : { data: [] })),
+          fetch(`/api/celebrity?t=${ts}`).then((r) => (r.ok ? r.json() : { data: [] })),
         ]);
 
         if (resLeads.leads) setLeads(resLeads.leads);
-
-        if (resProducts.data) {
-          setLiveWatches(
-            resProducts.data
-              .filter((w: any) => w && w._id)
-              .sort(
-                (a: any, b: any) => (b.priority || 0) - (a.priority || 0)
-              )
-          );
-        }
-
+        if (resProducts.data) setLiveWatches(resProducts.data);
         if (resAgents.data) setAgents(resAgents.data);
         if (resOrders.data) setOrders(resOrders.data);
-        if (resAnalytics && resAnalytics.success) setFullAnalytics(resAnalytics);
+        if (resAnalytics?.success) setFullAnalytics(resAnalytics);
         if (resCelebs.data) setCelebs(resCelebs.data);
         if (resMarketing.data) setCoupons(resMarketing.data);
         if (resCust.data) setCustomers(resCust.data);
-
-        if (resReviews.data) {
-          const sortedRevs = resReviews.data.sort((a: any, b: any) => {
-            if (a.visibility === "pending" && b.visibility !== "pending") return -1;
-            if (b.visibility === "pending" && a.visibility !== "pending") return 1;
-            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-          });
-          setAllReviews(sortedRevs);
-        }
+        if (resReviews.data) setAllReviews(resReviews.data);
 
         if (resCms.data && !silent) {
           const cms = resCms.data;
@@ -491,53 +372,22 @@ function AdminDashboard() {
           if (cms.corporateInfo) setCorporateInfo(cms.corporateInfo);
           if (cms.legalPages) setLegalPages(cms.legalPages);
         }
-      } catch (error) {
-        console.error("Dashboard Sync Error:", error);
-        if (!silent) addLog("Error: Database connection disrupted.");
+      } catch (err) {
+        console.error("Dashboard Sync Error:", err);
       } finally {
         if (!silent) setIsSyncing(false);
       }
     },
-    [addLog]
+    []
   );
 
   useEffect(() => {
-    if (session?.user?.role === "SUPER_ADMIN") {
+    if (session?.user && (session.user as any)?.role === "SUPER_ADMIN") {
       fetchDashboardData();
     }
   }, [session, fetchDashboardData]);
 
-  const handleSaveCMS = async () => {
-    setIsSyncing(true);
-    addLog("Pushing UI configuration to database...");
-    try {
-      const res = await fetch("/api/cms", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          heroSlides,
-          aboutConfig,
-          galleryImages,
-          promotionalVideos: promoVideos,
-          uiConfig,
-          categories,
-          faqs,
-          socialLinks,
-          corporateInfo,
-          legalPages,
-        }),
-      });
-      if (!res.ok) throw new Error("CMS save failed");
-      addLog("CMS sync complete.");
-    } catch (error) {
-      console.error(error);
-      addLog("Failed to save settings.");
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-// Inside AdminDashboard function in app/godmode/page.tsx
-
+  // Product Handlers
   const handleSaveProduct = async () => {
     try {
       setIsSyncing(true);
@@ -547,10 +397,9 @@ function AdminDashboard() {
         body: JSON.stringify(watchForm),
       });
       const data = await res.json();
-      if (!data.success) throw new Error(data.error || "Save failed");
-      
-      addLog(`Product "${watchForm.name}" synchronized.`);
-      // Reset form
+      if (!data.success) throw new Error(data.error);
+
+      addLog(`Timepiece "${watchForm.name}" updated.`);
       setWatchForm({
         name: "",
         brand: "",
@@ -589,424 +438,366 @@ function AdminDashboard() {
       setIsSyncing(true);
       const res = await fetch(`/api/products?id=${id}`, { method: "DELETE" });
       const data = await res.json();
-      if (!data.success) throw new Error(data.error || "Delete failed");
-      
-      addLog("Product removed from vault catalog.");
-      await fetchDashboardData(true);
-    } catch (err: any) {
-      console.error(err);
-      addLog(`Error: ${err.message}`);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-  const handleSaveAgent = async () => {
-    if (!agentForm.name || !agentForm.code) {
-      addLog("Name and Code are required!");
-      return;
-    }
-    setIsSyncing(true);
-    try {
-      const res = await fetch("/api/agents", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(agentForm),
-      });
-      if (!res.ok) throw new Error("Failed to save affiliate");
-      addLog("Affiliate system updated.");
-      setIsAgentModalOpen(false);
-      setAgentForm({ name: "", email: "", code: "", tier: "Partner", commissionRate: 5 });
-      fetchDashboardData(true);
-    } catch (error) {
-      console.error(error);
-      addLog("Failed to save affiliate.");
+      if (data.success) {
+        addLog("Catalog item purged.");
+        await fetchDashboardData(true);
+      }
     } finally {
       setIsSyncing(false);
     }
   };
 
-  const handleDeleteAffiliate = async (id: string) => {
-    setIsSyncing(true);
+  // Order Handlers
+  const handleUpdateOrderStatus = async (orderId: string, status: string) => {
     try {
-      const res = await fetch(`/api/agents?id=${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete");
-      addLog("Affiliate deleted from system.");
-      fetchDashboardData(true);
-    } catch (error) {
-      console.error(error);
-      addLog("Failed to delete affiliate.");
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const handleAddManualReview = async () => {
-    if (!manualReview.userName || !manualReview.comment) {
-      addLog("Client Alias and Feedback are required!");
-      return;
-    }
-    setIsSyncing(true);
-    try {
-      const res = await fetch("/api/reviews", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(manualReview),
-      });
-      if (!res.ok) throw new Error("Failed to inject review");
-      addLog("Manual review injected.");
-      setManualReview({
-        userName: "",
-        comment: "",
-        rating: 5,
-        product: "GLOBAL",
-        visibility: "public",
-        isAdminGenerated: true,
-        media: [],
-      });
-      fetchDashboardData(true);
-    } catch (error) {
-      console.error(error);
-      addLog("Failed to compile review.");
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const handleUpdateReviewStatus = async (id: string, newVisibility: string) => {
-    setIsSyncing(true);
-    try {
-      const res = await fetch("/api/reviews", {
+      setIsSyncing(true);
+      const res = await fetch("/api/orders", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, visibility: newVisibility }),
+        body: JSON.stringify({ orderId, status }),
       });
-      if (!res.ok) throw new Error("Failed to update status");
-      addLog(`Feedback stream updated (${newVisibility}).`);
-      fetchDashboardData(true);
-    } catch (error) {
-      console.error(error);
-      addLog("Failed to update review status.");
+      if (res.ok) {
+        addLog(`Order updated to ${status}.`);
+        await fetchDashboardData(true);
+      }
     } finally {
       setIsSyncing(false);
     }
   };
 
-  const handleDeleteReview = async (id: string) => {
-    setIsSyncing(true);
+  const handleUpdateTracking = async (orderId: string, trackingData: any) => {
     try {
-      const res = await fetch(`/api/reviews?id=${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete review");
-      addLog("Feedback erased from system.");
-      fetchDashboardData(true);
-    } catch (error) {
-      console.error(error);
-      addLog("Failed to erase review.");
+      setIsSyncing(true);
+      const res = await fetch("/api/orders", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, ...trackingData }),
+      });
+      if (res.ok) {
+        addLog("Courier telemetry mapped.");
+        await fetchDashboardData(true);
+      }
     } finally {
       setIsSyncing(false);
     }
   };
+
+  const handleDeleteOrder = async (orderId: string) => {
+    try {
+      setIsSyncing(true);
+      await fetch(`/api/orders?id=${orderId}`, { method: "DELETE" });
+      addLog("Consignment purged.");
+      await fetchDashboardData(true);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // CMS Handlers
+  const handleSaveCMS = async () => {
+    setIsSyncing(true);
+    try {
+      await fetch("/api/cms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          heroSlides,
+          aboutConfig,
+          galleryImages,
+          promotionalVideos: promoVideos,
+          uiConfig,
+          categories,
+          faqs,
+          socialLinks,
+          corporateInfo,
+          legalPages,
+        }),
+      });
+      addLog("Storefront configuration synchronized.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Filtered Navigation
+  const filteredCategories = useMemo(() => {
+    const q = navSearch.trim().toLowerCase();
+    if (!q) return MODULE_CATEGORIES;
+    return MODULE_CATEGORIES.map((cat) => ({
+      ...cat,
+      modules: cat.modules.filter((m) => m.label.toLowerCase().includes(q) || m.id.toLowerCase().includes(q)),
+    })).filter((cat) => cat.modules.length > 0);
+  }, [navSearch]);
+
+  const activeModuleLabel = useMemo(() => {
+    for (const cat of MODULE_CATEGORIES) {
+      const match = cat.modules.find((m) => m.id === activeTab);
+      if (match) return match.label;
+    }
+    return "Operations Center";
+  }, [activeTab]);
 
   if (status === "loading") {
     return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center font-mono text-xs uppercase tracking-widest">
-        Authenticating Secure Vault Node...
+      <div className="min-h-screen bg-[#07090b] text-white flex items-center justify-center font-mono text-xs uppercase tracking-[4px]">
+        Authenticating Cryptographic Node...
       </div>
     );
   }
 
-  if (!session || session.user?.role !== "SUPER_ADMIN") {
+  if (!session || (session.user as any)?.role !== "SUPER_ADMIN") {
     return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+      <div className="min-h-screen bg-[#07090b] text-white flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-[#D4AF37]/10 border border-[#D4AF37]/30 flex items-center justify-center text-[#D4AF37] mb-6 shadow-2xl">
+          <Lock size={28} />
+        </div>
+        <h1 className="text-2xl font-serif font-bold tracking-wide mb-2">Restricted Vault Gateway</h1>
+        <p className="text-xs text-gray-400 mb-8 max-w-sm">Elevated administrative clearance is mandatory to access this terminal.</p>
         <button
           onClick={() => signIn("google")}
-          className="bg-[#D4AF37] text-black px-12 py-5 rounded-full font-bold tracking-widest uppercase cursor-pointer hover:bg-white transition-all shadow-xl"
+          className="bg-[#D4AF37] hover:bg-white text-black px-10 py-4 rounded-xl text-xs font-black tracking-widest uppercase transition-all shadow-xl cursor-pointer"
         >
-          Admin Sign In
+          Authenticate Identity
         </button>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-black text-white flex font-sans">
-      <div className="fixed inset-0 pointer-events-none z-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:40px_40px]" />
+    <div className="min-h-screen bg-[#07090b] text-gray-200 flex font-sans selection:bg-[#D4AF37] selection:text-black">
+      {/* BACKGROUND MESH */}
+      <div className="fixed inset-0 pointer-events-none z-0 bg-[radial-gradient(#ffffff08_1px,transparent_1px)] [background-size:24px_24px]" />
 
-      {/* SIDEBAR */}
-      <aside className="hidden lg:flex w-[300px] bg-black/60 backdrop-blur-2xl border-r border-white/10 flex-col z-50">
-        <div className="p-8 border-b border-white/10 flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/20 border border-[#D4AF37]/50 flex items-center justify-center text-[#D4AF37]">
-            <ShieldCheck size={20} />
-          </div>
-
-          <div className="overflow-hidden">
-            <p className="text-[9px] text-[#00F0FF] font-bold uppercase tracking-widest">
-              <Activity size={10} className="inline animate-pulse" /> System Secured
-            </p>
-            <h1 className="text-sm font-bold truncate">
-              {session.user?.name}
-            </h1>
+      {/* =====================================================================
+          SIDEBAR: ENTERPRISE LUXURY
+      ====================================================================== */}
+      <aside className="hidden lg:flex w-[320px] bg-[#0A0D10] border-r border-white/10 flex-col z-50 shrink-0 select-none">
+        {/* Identity Badge */}
+        <div className="p-6 border-b border-white/10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/15 border border-[#D4AF37]/40 flex items-center justify-center text-[#D4AF37]">
+              <ShieldCheck size={20} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-white uppercase tracking-wider">{session.user?.name}</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              </div>
+              <p className="text-[9px] text-[#D4AF37] font-mono uppercase tracking-widest">Master Authority</p>
+            </div>
           </div>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
-          {MODULES.map((module) => {
-            const Icon = module.icon;
-            return (
-              <button
-                key={module.id}
-                onClick={() => setActiveTab(module.id)}
-                className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all cursor-pointer ${
-                  activeTab === module.id
-                    ? "bg-[#D4AF37] text-black shadow-lg shadow-[#D4AF37]/20"
-                    : "text-gray-400 hover:text-white hover:bg-white/5"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <Icon size={16} />
-                  {module.label}
-                </div>
-                {activeTab === module.id && <ChevronRight size={14} />}
-              </button>
-            );
-          })}
+        {/* Quick Navigation Filter */}
+        <div className="p-4 border-b border-white/5">
+          <div className="relative">
+            <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+            <input
+              type="text"
+              value={navSearch}
+              onChange={(e) => setNavSearch(e.target.value)}
+              placeholder="Search console modules..."
+              className="w-full bg-white/[0.03] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder:text-gray-500 outline-none focus:border-[#D4AF37] transition-colors"
+            />
+          </div>
+        </div>
+
+        {/* Categorized Navigation */}
+        <nav className="flex-1 p-4 space-y-6 overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-white/10">
+          {filteredCategories.map((cat, idx) => (
+            <div key={idx} className="space-y-1.5">
+              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-gray-500 px-3 pb-1">
+                {cat.category}
+              </p>
+              {cat.modules.map((m) => {
+                const Icon = m.icon;
+                const isActive = activeTab === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => setActiveTab(m.id)}
+                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
+                      isActive
+                        ? "bg-[#D4AF37] text-black font-bold shadow-[0_4px_20px_rgba(212,175,55,0.25)]"
+                        : "text-gray-400 hover:text-white hover:bg-white/[0.04]"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Icon size={16} className={isActive ? "text-black" : "text-gray-400"} />
+                      <span>{m.label}</span>
+                    </div>
+                    {m.badge && (
+                      <span
+                        className={`text-[8px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider ${
+                          isActive ? "bg-black text-[#D4AF37]" : "bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/30"
+                        }`}
+                      >
+                        {m.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
-        <div className="p-6 border-t border-white/10">
+        {/* Sign Out */}
+        <div className="p-4 border-t border-white/10">
           <button
-            onClick={handleAdminLogout}
-            className="w-full py-3.5 text-red-400 text-[10px] font-bold uppercase tracking-widest border border-red-500/20 rounded-xl hover:bg-red-500 hover:text-white flex justify-center items-center gap-2 transition-all cursor-pointer"
+            onClick={() => signOut({ callbackUrl: "/" })}
+            className="w-full py-3 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white border border-red-500/20 rounded-xl text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
-            <Lock size={14} />
-            Sign Out
+            <LogOut size={14} /> Terminate Session
           </button>
         </div>
       </aside>
 
-      {/* MAIN CONTENT AREA */}
-      <main className="flex-1 min-w-0 p-4 md:p-8 lg:p-12 relative z-10 overflow-y-auto">
-        {/* MOBILE NAV TABS */}
-        <div className="lg:hidden flex overflow-x-auto gap-2 pb-4 mb-6 border-b border-white/10">
-          {MODULES.map((module) => {
-            const Icon = module.icon;
-            return (
-              <button
-                key={module.id}
-                onClick={() => setActiveTab(module.id)}
-                className={`shrink-0 flex items-center gap-2 px-5 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest ${
-                  activeTab === module.id
-                    ? "bg-[#D4AF37] text-black"
-                    : "bg-white/5 text-gray-400 border border-white/10"
-                }`}
-              >
-                <Icon size={14} />
-                {module.label}
-              </button>
-            );
-          })}
-        </div>
+      {/* =====================================================================
+          MAIN EXECUTIVE VIEWPORT
+      ====================================================================== */}
+      <main className="flex-1 min-w-0 flex flex-col h-screen overflow-y-auto relative z-10">
+        {/* Top Header Status Bar */}
+        <header className="sticky top-0 z-40 bg-[#07090b]/80 backdrop-blur-xl border-b border-white/10 px-6 lg:px-10 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-[9px] uppercase tracking-widest font-mono text-gray-500">
+              <span>Security Clearance</span>
+              <span>•</span>
+              <span className="text-emerald-400">Encrypted</span>
+            </div>
+            <h1 className="text-xl md:text-2xl font-serif font-bold text-white mt-0.5">{activeModuleLabel}</h1>
+          </div>
 
-        {/* HEADER */}
-        <header className="flex flex-col lg:flex-row lg:justify-between lg:items-center mb-10 border-b border-white/10 pb-6 gap-4">
-          <h2 className="text-2xl md:text-4xl font-serif">
-            {MODULES.find((module) => module.id === activeTab)?.label}
-          </h2>
-
-          <div className="flex gap-3">
+          <div className="flex items-center gap-3">
             <button
               onClick={() => fetchDashboardData(false)}
-              className="px-5 py-3.5 bg-[#D4AF37]/10 border border-[#D4AF37]/30 rounded-xl text-[#D4AF37] hover:bg-[#D4AF37] hover:text-black flex items-center gap-2 text-xs font-bold uppercase tracking-widest transition-all cursor-pointer"
+              disabled={isSyncing}
+              className="px-4 py-2.5 bg-white/[0.04] hover:bg-[#D4AF37] hover:text-black border border-white/10 rounded-xl text-xs font-bold uppercase tracking-wider text-gray-300 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
             >
-              <RefreshCcw
-                size={15}
-                className={isSyncing ? "animate-spin" : ""}
-              />
-              Sync Telemetry
+              <RefreshCcw size={14} className={isSyncing ? "animate-spin text-[#D4AF37]" : ""} />
+              {isSyncing ? "Syncing..." : "Sync Database"}
             </button>
           </div>
         </header>
 
-        {/* TAB ROUTING */}
-        <AnimatePresence mode="wait">
-          {activeTab === "FULL_DASHBOARD" && (
-            <DashboardTab
-              fullAnalytics={fullAnalytics}
-              dashboardView={dashboardView}
-              setDashboardView={setDashboardView}
-              leads={leads}
-              orders={orders}
-              dispatchVIPRecovery={async () => {}}
-              vipDispatchingKey={vipDispatchingKey}
-              handleDeleteLead={async () => {}}
-              systemLogs={systemLogs}
-            />
-          )}
+        {/* Main Work Area */}
+        <div className="p-6 lg:p-10 flex-1">
+          <AnimatePresence mode="wait">
+            {activeTab === "FULL_DASHBOARD" && (
+              <DashboardTab
+                fullAnalytics={fullAnalytics}
+                dashboardView={dashboardView}
+                setDashboardView={setDashboardView}
+                leads={leads}
+                orders={orders}
+                dispatchVIPRecovery={async () => {}}
+                vipDispatchingKey={vipDispatchingKey}
+                handleDeleteLead={async () => {}}
+                systemLogs={systemLogs}
+              />
+            )}
 
-          {activeTab === "AI_COMMAND_CENTER" && <AiCommandCenterTab />}
-{activeTab === "MYRIO_ARCHIVE" && <MyrioArchiveTab />}
-          {activeTab === "INVENTORY" && (
-  <InventoryTab
-    watchForm={watchForm}
-    setWatchForm={setWatchForm}
-    handleSaveProduct={handleSaveProduct}
-    liveWatches={liveWatches}
-    handleDeleteProduct={handleDeleteProduct}
-    PremiumUploadNode={PremiumUploadNode}
-    setIsImageUploading={setIsImageUploading}
-  />
-)}
+            {activeTab === "AI_COMMAND_CENTER" && <AiCommandCenterTab />}
+            {activeTab === "MYRIO_LEARNING" && <MyrioLearningTab />}
+            {activeTab === "MYRIO_HEALTH" && <MyrioHealthTab />}
+            {activeTab === "MYRIO_ARCHIVE" && <MyrioArchiveTab />}
 
-          {activeTab === "CRM" && <CustomersCrm customers={customers} />}
-{activeTab === "MYRIO_HEALTH" && <MyrioHealthTab />}
-          {activeTab === "AMBASSADORS" && (
-            <BrandAmbassadors
-              celebs={celebs}
-              newCeleb={newCeleb}
-              setNewCeleb={setNewCeleb}
-              handleAddCeleb={() => fetchDashboardData(true)}
-              handleDeleteCeleb={(id: string) => setCelebs(celebs.filter((c) => c._id !== id))}
-              PremiumUploadNode={PremiumUploadNode}
-            />
-          )}
+            {activeTab === "INVENTORY" && (
+              <InventoryTab
+                watchForm={watchForm}
+                setWatchForm={setWatchForm}
+                handleSaveProduct={handleSaveProduct}
+                liveWatches={liveWatches}
+                handleDeleteProduct={handleDeleteProduct}
+                PremiumUploadNode={PremiumUploadNode}
+                setIsImageUploading={setIsImageUploading}
+              />
+            )}
 
-          {activeTab === "PAGE_BUILDER" && (
-            <WebsiteBuilderTab
-              heroSlides={heroSlides}
-              setHeroSlides={setHeroSlides}
-              promoVideos={promoVideos}
-              setPromoVideos={setPromoVideos}
-              aboutConfig={aboutConfig}
-              setAboutConfig={setAboutConfig}
-              uiConfig={uiConfig}
-              setUiConfig={setUiConfig}
-              socialLinks={socialLinks}
-              setSocialLinks={setSocialLinks}
-              handleSaveCMS={handleSaveCMS}
-              PremiumUploadNode={PremiumUploadNode}
-            />
-          )}
+            {activeTab === "ORDER_TRACKER" && (
+              <OrderTrackerTab
+                orders={orders}
+                exportToCSV={() => {}}
+                handleUpdateOrderStatus={handleUpdateOrderStatus}
+                handleUpdateTracking={handleUpdateTracking}
+                setSelectedOrder={setSelectedOrder}
+                handleDeleteOrder={handleDeleteOrder}
+              />
+            )}
 
-          {activeTab === "SEO_ENGINE" && <SeoEngineTab />}
+            {activeTab === "CRM" && <CustomersCrm customers={customers} />}
+            {activeTab === "COUPONS" && <CouponMarketingTab />}
+            {activeTab === "WITHDRAWALS" && <WithdrawalTab />}
 
-          {activeTab === "LEGAL_PAGES" && (
-            <LegalPagesTab
-              legalPages={legalPages}
-              setLegalPages={setLegalPages}
-              activeLegalPageId={activeLegalPageId}
-              setActiveLegalPageId={setActiveLegalPageId}
-              corporateInfo={corporateInfo}
-              setCorporateInfo={setCorporateInfo}
-              handleSaveCMS={handleSaveCMS}
-              PremiumUploadNode={PremiumUploadNode}
-            />
-          )}
+            {activeTab === "PAGE_BUILDER" && (
+              <WebsiteBuilderTab
+                heroSlides={heroSlides}
+                setHeroSlides={setHeroSlides}
+                promoVideos={promoVideos}
+                setPromoVideos={setPromoVideos}
+                aboutConfig={aboutConfig}
+                setAboutConfig={setAboutConfig}
+                uiConfig={uiConfig}
+                setUiConfig={setUiConfig}
+                socialLinks={socialLinks}
+                setSocialLinks={setSocialLinks}
+                handleSaveCMS={handleSaveCMS}
+                PremiumUploadNode={PremiumUploadNode}
+              />
+            )}
 
-          {activeTab === "REVIEWS" && (
-            <ReviewsTab
-              manualReview={manualReview}
-              setManualReview={setManualReview}
-              handleAddManualReview={handleAddManualReview}
-              allReviews={allReviews}
-              handleUpdateReviewStatus={handleUpdateReviewStatus}
-              handleDeleteReview={handleDeleteReview}
-              PremiumUploadNode={PremiumUploadNode}
-            />
-          )}
-          {activeTab === "MYRIO_LEARNING" && <MyrioLearningTab />}
+            {activeTab === "SEO_ENGINE" && <SeoEngineTab />}
 
-          {activeTab === "SALES_FORCE" && (
-            <SalesForceTab
-              agents={agents}
-              setIsAgentModalOpen={setIsAgentModalOpen}
-              handleDeleteAffiliate={handleDeleteAffiliate}
-            />
-          )}
+            {activeTab === "AMBASSADORS" && (
+              <BrandAmbassadors
+                celebs={celebs}
+                newCeleb={newCeleb}
+                setNewCeleb={setNewCeleb}
+                handleAddCeleb={() => fetchDashboardData(true)}
+                handleDeleteCeleb={(id: string) => setCelebs(celebs.filter((c) => c._id !== id))}
+                PremiumUploadNode={PremiumUploadNode}
+              />
+            )}
 
-          {activeTab === "COUPONS" && <CouponMarketingTab />}
-          {activeTab === "SECURITY" && <SecurityTab />}
-          {activeTab === "WITHDRAWALS" && <WithdrawalTab />}
+            {activeTab === "REVIEWS" && (
+              <ReviewsTab
+                manualReview={manualReview}
+                setManualReview={setManualReview}
+                handleAddManualReview={() => {}}
+                allReviews={allReviews}
+                handleUpdateReviewStatus={() => {}}
+                handleDeleteReview={() => {}}
+                PremiumUploadNode={PremiumUploadNode}
+              />
+            )}
 
-          {activeTab === "ORDER_TRACKER" && (
-            <OrderTrackerTab
-              orders={orders}
-              exportToCSV={() => {}}
-              handleUpdateOrderStatus={async () => {}}
-              handleUpdateTracking={async () => {}}
-              setSelectedOrder={setSelectedOrder}
-              handleDeleteOrder={async () => {}}
-            />
-          )}
-        </AnimatePresence>
+            {activeTab === "SALES_FORCE" && (
+              <SalesForceTab
+                agents={agents}
+                setIsAgentModalOpen={setIsAgentModalOpen}
+                handleDeleteAffiliate={async () => {}}
+              />
+            )}
 
-        {/* AFFILIATE / AGENT MODAL */}
-        {isAgentModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-            <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl">
-              <h2 className="text-xl font-serif text-[#D4AF37] mb-4">Add New Affiliate</h2>
-              <div className="space-y-4">
-                <input
-                  type="text"
-                  placeholder="Full Name"
-                  value={agentForm.name}
-                  onChange={(e) => setAgentForm({ ...agentForm, name: e.target.value })}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:outline-none focus:border-[#D4AF37] text-sm"
-                />
-                <input
-                  type="email"
-                  placeholder="Email Address"
-                  value={agentForm.email}
-                  onChange={(e) => setAgentForm({ ...agentForm, email: e.target.value })}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:outline-none focus:border-[#D4AF37] text-sm"
-                />
-                <input
-                  type="text"
-                  placeholder="Custom Code (e.g., VIP50)"
-                  value={agentForm.code}
-                  onChange={(e) => setAgentForm({ ...agentForm, code: e.target.value })}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3 focus:outline-none focus:border-[#D4AF37] text-sm uppercase"
-                />
-                <div className="flex gap-4">
-                  <select
-                    value={agentForm.tier}
-                    onChange={(e) => setAgentForm({ ...agentForm, tier: e.target.value as any })}
-                    className="w-1/2 bg-white/5 border border-white/10 rounded-xl p-3 focus:outline-none focus:border-[#D4AF37] text-sm"
-                  >
-                    <option value="Partner">Partner</option>
-                    <option value="VIP">VIP</option>
-                    <option value="Master">Master</option>
-                  </select>
-                  <input
-                    type="number"
-                    placeholder="Comm. %"
-                    value={agentForm.commissionRate}
-                    onChange={(e) => setAgentForm({ ...agentForm, commissionRate: Number(e.target.value) })}
-                    className="w-1/2 bg-white/5 border border-white/10 rounded-xl p-3 focus:outline-none focus:border-[#D4AF37] text-sm"
-                  />
-                </div>
-              </div>
+            {activeTab === "LEGAL_PAGES" && (
+              <LegalPagesTab
+                legalPages={legalPages}
+                setLegalPages={setLegalPages}
+                activeLegalPageId={activeLegalPageId}
+                setActiveLegalPageId={setActiveLegalPageId}
+                corporateInfo={corporateInfo}
+                setCorporateInfo={setCorporateInfo}
+                handleSaveCMS={handleSaveCMS}
+                PremiumUploadNode={PremiumUploadNode}
+              />
+            )}
 
-              <div className="flex gap-3 mt-8">
-                <button
-                  onClick={() => setIsAgentModalOpen(false)}
-                  className="flex-1 py-3 border border-white/20 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-white/5 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveAgent}
-                  className="flex-1 py-3 bg-[#D4AF37] text-black rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-white transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-lg"
-                >
-                  {isSyncing ? <RefreshCcw size={14} className="animate-spin" /> : null}
-                  Save Affiliate
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+            {activeTab === "SECURITY" && <SecurityTab />}
+          </AnimatePresence>
+        </div>
       </main>
     </div>
   );
 }
 
-export default dynamic(() => Promise.resolve(AdminDashboard), {
-  ssr: false,
-});
+export default dynamic(() => Promise.resolve(AdminDashboard), { ssr: false });

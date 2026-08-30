@@ -11,6 +11,9 @@ import { emitAiAlert, emitAiAuditLog } from '@/lib/ai-telemetry';
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 
+// ============================================================================
+// 1. GET ALL ORDERS (ROLE-BASED SCOPING)
+// ============================================================================
 export async function GET() {
   try {
     await connectDB();
@@ -58,7 +61,10 @@ export async function GET() {
   }
 }
 
-export async function PATCH(req: Request) {
+// ============================================================================
+// 2. HELPER: UPDATE ORDER LOGIC (HANDLES BOTH PUT & PATCH)
+// ============================================================================
+async function handleOrderUpdate(req: Request) {
   try {
     const session = await getServerSession(authOptions);
     const userRole = (session?.user as any)?.role;
@@ -71,31 +77,38 @@ export async function PATCH(req: Request) {
 
     await connectDB();
     const body = await req.json();
-    const id = sanitizeString(body?.id || body?.orderId, 50);
+    const rawId = sanitizeString(body?.id || body?.orderId, 50);
     const status = sanitizeString(body?.status, 30);
     const trackingId = sanitizeString(body?.trackingId || body?.trackingNumber, 100);
-    const courier = sanitizeString(body?.courier, 100);
+    const courier = sanitizeString(body?.courier || body?.courierName, 100);
+    const trackingUrl = sanitizeString(body?.trackingUrl, 250);
 
-    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
-      return NextResponse.json({ success: false, error: 'Valid Order ID required' }, { status: 400 });
+    if (!rawId) {
+      return NextResponse.json({ success: false, error: 'Order ID is required' }, { status: 400 });
     }
 
-    const order = await Order.findById(id);
-    if (!order) return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
+    // Support MongoDB _id as well as custom orderId string
+    const query = mongoose.Types.ObjectId.isValid(rawId)
+      ? { $or: [{ _id: new mongoose.Types.ObjectId(rawId) }, { orderId: rawId }] }
+      : { orderId: rawId };
 
-    const updateData: Record<string, any> = {};
+    const order = await Order.findOne(query);
+    if (!order) {
+      return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
+    }
+
+    const updateData: Record<string, any> = { updatedAt: new Date() };
     if (status) updateData.status = status;
     if (trackingId !== undefined) {
       updateData.trackingId = trackingId;
       updateData.trackingNumber = trackingId;
     }
-    if (courier !== undefined) {
-      updateData.courier = courier;
-    }
+    if (courier !== undefined) updateData.courier = courier;
+    if (trackingUrl !== undefined) updateData.trackingUrl = trackingUrl;
 
     const currentStatus = status ? status.toUpperCase() : '';
 
-    // 🛡️ Atomic Referral & Agent Reward Processing
+    // Referral & Agent Commission Settlement on Delivery
     if (currentStatus === 'DELIVERED' && order.referralCode && !order.isRewardCredited) {
       const cleanCode = escapeRegex(order.referralCode.trim().toUpperCase());
       const db = mongoose.connection.db;
@@ -131,14 +144,14 @@ export async function PATCH(req: Request) {
       }
     }
 
-    const updatedOrder = await Order.findByIdAndUpdate(id, { $set: updateData }, { new: true });
+    const updatedOrder = await Order.findByIdAndUpdate(order._id, { $set: updateData }, { new: true });
 
-    // 🛡️ Emit Non-blocking AI Audit Log
+    // Telemetry & Audit Logs
     emitAiAuditLog({
       agentName: 'Order Agent',
       requestedOperation: 'UPDATE_ORDER_LIFECYCLE',
-      decision: `Order #${order.orderId || id} updated to status '${status || order.status}'.`,
-      toolUsed: 'Orders-API-Patch',
+      decision: `Order #${order.orderId || order._id} updated to status '${status || order.status}'.`,
+      toolUsed: 'Orders-API-Update',
       permissionLevel: 'AUTO',
       executedBy: userEmail || userRole || 'STAFF',
       riskScore: currentStatus === 'CANCELLED' ? 40 : 5,
@@ -165,11 +178,22 @@ export async function PATCH(req: Request) {
 
     return NextResponse.json({ success: true, data: updatedOrder });
   } catch (error) {
-    console.error('Patch Order Error:', error);
+    console.error('Update Order Error:', error);
     return NextResponse.json({ success: false, error: 'Failed to update order' }, { status: 500 });
   }
 }
 
+export async function PATCH(req: Request) {
+  return handleOrderUpdate(req);
+}
+
+export async function PUT(req: Request) {
+  return handleOrderUpdate(req);
+}
+
+// ============================================================================
+// 3. DELETE ORDER (HANDLES BOTH URL SEARCH PARAMS & JSON BODY)
+// ============================================================================
 export async function DELETE(req: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -181,16 +205,37 @@ export async function DELETE(req: Request) {
     }
 
     await connectDB();
-    const { id } = await req.json();
-    const cleanId = sanitizeString(id, 50);
 
-    if (!cleanId || !mongoose.Types.ObjectId.isValid(cleanId)) {
+    let targetId = '';
+    const { searchParams } = new URL(req.url);
+    const queryId = searchParams.get('id');
+
+    if (queryId) {
+      targetId = queryId;
+    } else {
+      try {
+        const body = await req.json();
+        targetId = body?.id || body?.orderId || '';
+      } catch {
+        targetId = '';
+      }
+    }
+
+    const cleanId = sanitizeString(targetId, 50);
+    if (!cleanId) {
       return NextResponse.json({ success: false, error: 'Valid Order ID required' }, { status: 400 });
     }
 
-    const deletedOrder = await Order.findByIdAndDelete(cleanId);
+    const query = mongoose.Types.ObjectId.isValid(cleanId)
+      ? { $or: [{ _id: new mongoose.Types.ObjectId(cleanId) }, { orderId: cleanId }] }
+      : { orderId: cleanId };
 
-    // 🛡️ Telemetry on deletion
+    const deletedOrder = await Order.findOneAndDelete(query);
+
+    if (!deletedOrder) {
+      return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 });
+    }
+
     emitAiAuditLog({
       agentName: 'Security Agent',
       requestedOperation: 'DELETE_ORDER_RECORD',
@@ -208,6 +253,7 @@ export async function DELETE(req: Request) {
 
     return NextResponse.json({ success: true, message: 'Order Deleted', deletedOrder });
   } catch (error) {
+    console.error('Delete Order Error:', error);
     return NextResponse.json({ success: false, error: 'Delete failed' }, { status: 500 });
   }
 }
