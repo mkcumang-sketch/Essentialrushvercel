@@ -67,7 +67,7 @@ export async function executeMyrioOrchestration(
       }
     }
 
-    // 2. LIVE DATABASE CONTEXT RETRIEVAL
+    // 2. LIVE DATABASE CONTEXT & LEARNED RULES RETRIEVAL
     let userOrdersContext = "No prior vault orders found.";
     if (payload.customerEmail) {
       const orders = await Order.find({ "customer.email": payload.customerEmail.toLowerCase().trim() })
@@ -84,8 +84,15 @@ export async function executeMyrioOrchestration(
 
     const activeProducts = await Product.find({ isActive: true }).sort({ priority: -1 }).limit(6).lean();
     const catalogSummary = activeProducts
-      .map((p: any) => `${p.name || p.title} (${p.brand}) - ₹${(p.offerPrice || p.price)?.toLocaleString("en-IN")} [Stock: ${p.stock}]`)
+      .map((p: any) => `• ${p.name || p.title} (${p.brand}) - ₹${(p.offerPrice || p.price)?.toLocaleString("en-IN")} [Stock: ${p.stock}]`)
       .join("; ");
+
+    // Fetch custom behavioral rules trained from Godmode Learning Center
+    const customRules = await MyrioKnowledge.find({ isActive: true }).limit(8).lean();
+    const adminTrainingContext = customRules.length > 0
+      ? "\nADMIN TAILORED RESPONSE GUIDELINES (MANDATORY TO FOLLOW):\n" +
+        customRules.map((r: any) => `- When user asks about "${r.triggerQuery}": Respond using tone "${r.tone}" with guideline: "${r.responseGuideline}"`).join("\n")
+      : "";
 
     // 3. RETRIEVE RECENT CONVERSATION MEMORY
     let conversationHistory: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
@@ -113,13 +120,15 @@ CORE CONTEXT:
 - Patron Orders: ${userOrdersContext}
 - Available Vault Catalog: ${catalogSummary}
 - Store Guarantees: 7-day inspection window on unworn watches with unbroken security seals. Diplomatic insured global shipping. Payments via Razorpay (UPI, NetBanking, Cards), Wire, and COD.
+${adminTrainingContext}
 
 BEHAVIOR RULES:
 1. Act with genuine human-like luxury intelligence, wit, and high horological expertise. 
-2. NEVER give generic robotic answers or robotic placeholders.
-3. If the user asks about their specific order and is a Guest, kindly invite them to log in to access vault dispatch telemetry.
-4. When recommending watches, speak passionately about their craftsmanship, calibers, and exclusivity using the Live Vault Catalog.
-5. Keep answers refined, concise, and structured.`;
+2. Prioritize ADMIN TAILORED RESPONSE GUIDELINES whenever matching topics or user queries arise.
+3. NEVER give generic robotic answers or robotic placeholders.
+4. If the user asks about their specific order and is a Guest, kindly invite them to log in to access vault dispatch telemetry.
+5. When recommending watches, speak passionately about their craftsmanship, calibers, and exclusivity using the Live Vault Catalog.
+6. Keep answers refined, concise, and structured.`;
 
       const aiRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
@@ -190,8 +199,3 @@ BEHAVIOR RULES:
     };
   }
 }
-const customRules = await MyrioKnowledge.find({ isActive: true }).limit(8).lean();
-const adminTrainingContext = customRules.length > 0
-  ? "\nADMIN TAILORED RESPONSE GUIDELINES (MANDATORY):\n" +
-    customRules.map((r: any) => `- When user asks about "${r.triggerQuery}": Respond using tone "${r.tone}" with guidance: "${r.responseGuideline}"`).join("\n")
-  : "";
