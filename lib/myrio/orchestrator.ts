@@ -4,6 +4,7 @@ import { generateSystemHealthReport } from "@/lib/myrio/self-health";
 import { Order } from "@/models/Order";
 import { Product } from "@/models/Product";
 import { AiIncident } from "@/models/AiIncident";
+import { MyrioKnowledge } from "@/models/MyrioKnowledge";
 import { MyrioCustomerSession } from "@/models/MyrioCustomerSession";
 import { sanitizeString } from "@/lib/sanitize";
 
@@ -189,3 +190,8 @@ BEHAVIOR RULES:
     };
   }
 }
+const customRules = await MyrioKnowledge.find({ isActive: true }).limit(8).lean();
+const adminTrainingContext = customRules.length > 0
+  ? "\nADMIN TAILORED RESPONSE GUIDELINES (MANDATORY):\n" +
+    customRules.map((r: any) => `- When user asks about "${r.triggerQuery}": Respond using tone "${r.tone}" with guidance: "${r.responseGuideline}"`).join("\n")
+  : "";
