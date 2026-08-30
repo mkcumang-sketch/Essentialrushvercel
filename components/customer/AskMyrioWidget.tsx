@@ -25,6 +25,7 @@ import {
   User,
   X,
   Zap,
+  type LucideIcon,
 } from "lucide-react";
 
 // ============================================================================
@@ -44,7 +45,7 @@ interface ChatMessage {
 interface QuickAction {
   label: string;
   query: string;
-  icon: React.ElementType;
+  icon: LucideIcon;
 }
 
 // ============================================================================
