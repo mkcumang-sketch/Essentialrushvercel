@@ -1,377 +1,733 @@
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+
 import { authOptions } from "@/lib/auth";
 import connectDB from "@/lib/mongodb";
 import { MyrioKnowledge } from "@/models/MyrioKnowledge";
-import { Product } from "@/models/Product";
 
-const DEFAULT_TONE = "Luxury Concierge";
-const DEFAULT_CATEGORY = "GENERAL";
+// ============================================================================
+// TYPES
+// ============================================================================
 
-function jsonError(message: string, status = 500) {
-  return NextResponse.json({ success: false, error: message }, { status });
+interface RadarItem {
+  rank: number;
+  model: string;
+  brand?: string;
+  demandScore: number;
+  source: string;
+  suggestedPrice?: string;
+  reason: string;
 }
 
-function normalizeRadar(items: any[]) {
-  return items
-    .filter((item) => item && typeof item === "object")
-    .slice(0, 10)
-    .map((item, index) => ({
-      rank: index + 1,
-      model: String(item.model || item.name || "Unknown product"),
-      brand: String(item.brand || "Unknown"),
-      demandScore: Math.max(
-        0,
-        Math.min(100, Number(item.demandScore) || 0)
-      ),
-      source: String(item.source || "AI market synthesis"),
-      suggestedPrice: String(item.suggestedPrice || "Not available"),
-      reason: String(item.reason || "No explanation available."),
-    }));
-}
-
-async function getExternalMarketSignals(category: string) {
-  const apiKey = process.env.SERPAPI_KEY;
-
-  if (!apiKey) {
-    return {
-      available: false,
-      signals: [] as any[],
-      message: "SERPAPI_KEY is not configured; using catalog/AI analysis only.",
+interface GroqResponse {
+  choices?: Array<{
+    message?: {
+      content?: string;
     };
+  }>;
+}
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+
+function isAdmin(session: any): boolean {
+  const role = session?.user?.role;
+
+  return (
+    !!session &&
+    (role === "SUPER_ADMIN" || role === "ADMIN")
+  );
+}
+
+function cleanJsonResponse(value: string): string {
+  return value
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+}
+
+function normalizeRadarItem(
+  item: any,
+  index: number
+): RadarItem | null {
+  if (!item || typeof item !== "object") {
+    return null;
   }
 
-  const queries = [
-    `"${category}" luxury watches trending`,
-    `site:amazon.in "${category}" watches best seller`,
-  ];
+  const model =
+    typeof item.model === "string"
+      ? item.model.trim()
+      : "";
 
-  const results: any[] = [];
+  const reason =
+    typeof item.reason === "string"
+      ? item.reason.trim()
+      : "";
 
-  for (const q of queries) {
-    try {
-      const url = new URL("https://serpapi.com/search.json");
-      url.searchParams.set("engine", "google");
-      url.searchParams.set("q", q);
-      url.searchParams.set("api_key", apiKey);
-      url.searchParams.set("num", "10");
+  const source =
+    typeof item.source === "string"
+      ? item.source.trim()
+      : "AI Market Analysis";
 
-      const response = await fetch(url.toString(), {
-        cache: "no-store",
-      });
-
-      if (!response.ok) continue;
-
-      const data = await response.json();
-
-      for (const item of data.organic_results || []) {
-        results.push({
-          title: item.title,
-          snippet: item.snippet,
-          link: item.link,
-          source: item.source,
-        });
-      }
-    } catch (error) {
-      console.error("External market signal error:", error);
-    }
+  if (!model || !reason) {
+    return null;
   }
+
+  let demandScore = Number(item.demandScore);
+
+  if (!Number.isFinite(demandScore)) {
+    demandScore = 0;
+  }
+
+  demandScore = Math.max(
+    0,
+    Math.min(100, Math.round(demandScore))
+  );
 
   return {
-    available: results.length > 0,
-    signals: results.slice(0, 20),
-    message:
-      results.length > 0
-        ? "External Google/Amazon search signals retrieved."
-        : "External search returned no usable signals.",
+    rank: index + 1,
+    model,
+    brand:
+      typeof item.brand === "string"
+        ? item.brand.trim()
+        : undefined,
+    demandScore,
+    source,
+    suggestedPrice:
+      typeof item.suggestedPrice === "string"
+        ? item.suggestedPrice.trim()
+        : undefined,
+    reason,
   };
 }
 
+function normalizeRadar(items: any[]): RadarItem[] {
+  return items
+    .map((item, index) =>
+      normalizeRadarItem(item, index)
+    )
+    .filter(
+      (item): item is RadarItem =>
+        item !== null
+    )
+    .slice(0, 10)
+    .map((item, index) => ({
+      ...item,
+      rank: index + 1,
+    }));
+}
+
+// ============================================================================
+// GET
+// ============================================================================
+
 export async function GET() {
   try {
+    const session = await getServerSession(authOptions);
+
+    if (!isAdmin(session)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Unauthorized",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
     await connectDB();
 
     const rules = await MyrioKnowledge.find({})
       .sort({ createdAt: -1 })
       .lean();
 
-    return NextResponse.json({ success: true, rules });
+    return NextResponse.json({
+      success: true,
+      rules,
+    });
   } catch (error: any) {
-    console.error("MYRIO Learning GET Error:", error);
-    return jsonError(error?.message || "Unable to load MYRIO learning rules.");
+    console.error(
+      "MYRIO Learning GET Error:",
+      error
+    );
+
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          error?.message ||
+          "Failed to load MYRIO knowledge.",
+      },
+      {
+        status: 500,
+      }
+    );
   }
 }
 
+// ============================================================================
+// POST
+// ============================================================================
+
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    const userRole = (session?.user as any)?.role;
+    // ------------------------------------------------------------------------
+    // AUTH
+    // ------------------------------------------------------------------------
 
-    if (!session || !["SUPER_ADMIN", "ADMIN"].includes(userRole)) {
-      return jsonError("Unauthorized", 401);
+    const session = await getServerSession(
+      authOptions
+    );
+
+    if (!isAdmin(session)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Unauthorized",
+        },
+        {
+          status: 401,
+        }
+      );
     }
+
+    // ------------------------------------------------------------------------
+    // DATABASE
+    // ------------------------------------------------------------------------
 
     await connectDB();
 
-    const body = await req.json();
-    const action = String(body?.action || "");
+    // ------------------------------------------------------------------------
+    // BODY
+    // ------------------------------------------------------------------------
 
-    if (action === "ADD_RULE") {
-      const triggerQuery = String(body?.triggerQuery || "").trim();
-      const responseGuideline = String(body?.responseGuideline || "").trim();
-      const tone = String(body?.tone || DEFAULT_TONE).trim();
-      const category = String(body?.category || DEFAULT_CATEGORY).trim();
+    let body: any;
 
-      if (!triggerQuery || !responseGuideline) {
-        return jsonError("Missing required fields", 400);
-      }
-
-      const rule = await MyrioKnowledge.create({
-        triggerQuery,
-        responseGuideline,
-        tone: tone || DEFAULT_TONE,
-        category: category || DEFAULT_CATEGORY,
-        isActive: true,
-      });
-
-      return NextResponse.json({ success: true, rule });
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid JSON request body.",
+        },
+        {
+          status: 400,
+        }
+      );
     }
 
-    if (action === "DELETE_RULE") {
-      const id = String(body?.id || "").trim();
+    const action =
+      typeof body?.action === "string"
+        ? body.action.trim()
+        : "";
 
-      if (!id) {
-        return jsonError("Rule ID is required", 400);
+    // =========================================================================
+    // ADD RULE
+    // =========================================================================
+
+    if (action === "ADD_RULE") {
+      const triggerQuery =
+        typeof body.triggerQuery === "string"
+          ? body.triggerQuery.trim()
+          : "";
+
+      const responseGuideline =
+        typeof body.responseGuideline === "string"
+          ? body.responseGuideline.trim()
+          : "";
+
+      const tone =
+        typeof body.tone === "string"
+          ? body.tone.trim()
+          : "";
+
+      const category =
+        typeof body.category === "string"
+          ? body.category.trim()
+          : "";
+
+      if (!triggerQuery) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Trigger query is required.",
+          },
+          {
+            status: 400,
+          }
+        );
       }
 
-      const deleted = await MyrioKnowledge.findByIdAndDelete(id);
+      if (!responseGuideline) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Response guideline is required.",
+          },
+          {
+            status: 400,
+          }
+        );
+      }
 
-      if (!deleted) {
-        return jsonError("Rule not found", 404);
+      const rule =
+        await MyrioKnowledge.create({
+          triggerQuery,
+          responseGuideline,
+          tone,
+          category,
+          isActive: true,
+        });
+
+      return NextResponse.json({
+        success: true,
+        rule,
+      });
+    }
+
+    // =========================================================================
+    // DELETE RULE
+    // =========================================================================
+
+    if (action === "DELETE_RULE") {
+      const id =
+        typeof body.id === "string"
+          ? body.id.trim()
+          : "";
+
+      if (!id) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Rule ID is required.",
+          },
+          {
+            status: 400,
+          }
+        );
+      }
+
+      const deletedRule =
+        await MyrioKnowledge.findByIdAndDelete(
+          id
+        );
+
+      if (!deletedRule) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Rule not found.",
+          },
+          {
+            status: 404,
+          }
+        );
       }
 
       return NextResponse.json({
         success: true,
-        message: "Rule purged",
+        message: "Rule purged successfully.",
       });
     }
 
+    // =========================================================================
+    // TREND RADAR
+    // =========================================================================
+
     if (action === "TREND_RADAR") {
-      const category = String(
-        body?.category || "Rolex & Luxury Sports"
-      ).trim();
+      const rawCategory =
+        typeof body.category === "string"
+          ? body.category.trim()
+          : "";
 
-      if (!category) {
-        return jsonError("Category is required", 400);
-      }
+      const targetCategory =
+        rawCategory || "Luxury Timepieces";
 
-      /*
-       * IMPORTANT:
-       * Groq by itself does not browse Google Trends or Amazon.
-       * When SERPAPI_KEY exists, external Google/Amazon search signals
-       * are supplied to the model. Without it, the model is restricted
-       * to the local catalog and must not invent live-market claims.
-       */
-      const [products, marketSignals] = await Promise.all([
-        Product.find({}).limit(100).lean(),
-        getExternalMarketSignals(category),
-      ]);
+      // ----------------------------------------------------------------------
+      // SECURITY / INPUT LIMIT
+      // ----------------------------------------------------------------------
 
-      const apiKey =
-        process.env.GROQ_API_KEY || process.env.AIMLAPI_API_KEY;
-
-      if (!apiKey) {
-        const catalogMatches = products
-          .filter((product: any) => {
-            const haystack = [
-              product?.name,
-              product?.brand,
-              product?.category,
-              product?.description,
-              product?.seoTags,
-            ]
-              .filter(Boolean)
-              .join(" ")
-              .toLowerCase();
-
-            return haystack.includes(category.toLowerCase());
-          })
-          .slice(0, 10);
-
-        const radar = normalizeRadar(
-          catalogMatches.map((product: any, index: number) => ({
-            rank: index + 1,
-            model: product.name,
-            brand: product.brand,
-            demandScore: 0,
-            source: "Local Catalog Match",
-            suggestedPrice:
-              product.offerPrice || product.price || "Not available",
-            reason:
-              "Matched from the current catalog. Live market verification is unavailable because GROQ_API_KEY is not configured.",
-          }))
-        );
-
-        return NextResponse.json({
-          success: true,
-          radar,
-          meta: {
-            category,
-            liveMarketData: marketSignals.available,
-            source: marketSignals.message,
+      if (targetCategory.length > 100) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Category must be 100 characters or less.",
           },
-        });
+          {
+            status: 400,
+          }
+        );
       }
+
+      const groqApiKey =
+        process.env.GROQ_API_KEY;
+
+      // ----------------------------------------------------------------------
+      // NO API KEY
+      // ----------------------------------------------------------------------
+
+      if (!groqApiKey) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "MYRIO market intelligence is not configured. GROQ_API_KEY is missing.",
+            radar: [],
+          },
+          {
+            status: 503,
+          }
+        );
+      }
+
+      // ----------------------------------------------------------------------
+      // IMPORTANT:
+      // Groq itself does NOT have live Google Trends / Amazon access.
+      //
+      // Therefore we explicitly tell it NOT to pretend that it has verified
+      // live data.
+      // ----------------------------------------------------------------------
+
+      const systemPrompt = `
+You are MYRIO, the market-intelligence analyst for Essential Rush.
+
+Your task is to analyze a requested luxury product category and return
+structured market-intelligence candidates.
+
+CRITICAL TRUTHFULNESS RULES:
+
+1. You do NOT have direct live access to Google Trends.
+2. You do NOT have direct live access to Amazon.
+3. You do NOT have direct live access to Chrono24.
+4. You do NOT have direct live access to auction-house databases.
+5. Never claim that you checked a live source unless actual source data
+   has been supplied to you in this request.
+6. Never invent fake products, fake editions, fake market indexes,
+   fake search volumes, fake sales numbers, or fake source measurements.
+7. Use known real-world products/models when possible.
+8. If a claim cannot be verified from supplied data, clearly describe it
+   as an AI market assessment rather than verified live data.
+9. Never create placeholder names such as:
+   "Flagship Edition A",
+   "Complication B",
+   "Modern D",
+   "Vault J", etc.
+10. Return exactly 10 useful candidates whenever possible.
+11. demandScore must be an estimated AI assessment from 0-100,
+    NOT presented as an actual measured Google Trends score.
+12. Output JSON only.
+
+Return:
+
+{
+  "radar": [
+    {
+      "rank": 1,
+      "model": "Real product/model name",
+      "brand": "Brand",
+      "demandScore": 0,
+      "source": "AI Market Assessment",
+      "suggestedPrice": "Approximate market range",
+      "reason": "Concise explanation"
+    }
+  ]
+}
+`.trim();
+
+      const userPrompt = `
+Analyze this requested category:
+
+"${targetCategory}"
+
+Build a market-intelligence radar focused specifically on this category.
+
+Prioritize:
+
+- real products/models
+- recognizable brands
+- current category relevance
+- collector interest
+- luxury positioning
+- scarcity/availability considerations
+- likely customer demand
+- resale/secondary-market relevance
+- price positioning
+- purchase intent
+
+Because no live external market dataset is supplied, DO NOT claim
+that Google Trends, Amazon, Chrono24, auctions, or social platforms
+were actually queried.
+
+If a price is uncertain, describe it as an approximate range.
+
+Return exactly:
+
+{
+  "radar": [...]
+}
+
+with 10 items.
+`.trim();
+
+      // ----------------------------------------------------------------------
+      // GROQ REQUEST
+      // ----------------------------------------------------------------------
 
       try {
-        const catalog = products.map((product: any) => ({
-          name: product?.name,
-          brand: product?.brand,
-          category: product?.category,
-          price: product?.price,
-          offerPrice: product?.offerPrice,
-          description: product?.description,
-        }));
-
-        const externalSignals = marketSignals.signals.map((signal: any) => ({
-          title: signal.title,
-          snippet: signal.snippet,
-          source: signal.source,
-          link: signal.link,
-        }));
-
         const aiRes = await fetch(
           "https://api.groq.com/openai/v1/chat/completions",
           {
             method: "POST",
+
             headers: {
-              Authorization: `Bearer ${apiKey}`,
-              "Content-Type": "application/json",
+              Authorization: `Bearer ${groqApiKey}`,
+              "Content-Type":
+                "application/json",
             },
+
             body: JSON.stringify({
-              model: "llama-3.3-70b-versatile",
+              model:
+                "llama-3.3-70b-versatile",
+
               messages: [
                 {
                   role: "system",
-                  content: `
-You are MYRIO, a luxury-watch market intelligence analyst.
-
-Your job is to rank EXACTLY 10 relevant products for the requested category.
-
-Rules:
-1. Return ONLY valid JSON.
-2. JSON must have exactly one key: "radar".
-3. "radar" must contain exactly 10 objects.
-4. Each object must contain:
-   rank, model, brand, demandScore, source, suggestedPrice, reason.
-5. demandScore must be an integer from 0 to 100.
-6. Do not invent Google Trends, Amazon, auction, sales, search-volume,
-   price, or demand statistics.
-7. If external search signals are supplied, you may use them as evidence,
-   but do not claim a source contains information that is not present.
-8. If there are fewer than 10 directly supported products, use the best
-   relevant products from the supplied catalog and clearly say so in reason.
-9. Never fabricate a product just to reach 10.
-10. A source must describe the actual evidence used, such as
-    "Google/Amazon search signals", "Local Catalog", or "AI synthesis".
-                  `.trim(),
+                  content: systemPrompt,
                 },
                 {
                   role: "user",
-                  content: JSON.stringify({
-                    task: "Find the top 10 products for this category.",
-                    category,
-                    externalMarketSignals: externalSignals,
-                    localCatalog: catalog,
-                  }),
+                  content: userPrompt,
                 },
               ],
-              response_format: { type: "json_object" },
+
+              response_format: {
+                type: "json_object",
+              },
+
               temperature: 0.2,
+
+              max_tokens: 5000,
             }),
+
+            cache: "no-store",
           }
         );
 
-        if (aiRes.ok) {
-          const json = await aiRes.json();
-          const rawContent =
-            json?.choices?.[0]?.message?.content || "{}";
+        // --------------------------------------------------------------------
+        // API ERROR
+        // --------------------------------------------------------------------
 
-          const parsed = JSON.parse(rawContent);
-          const radar = normalizeRadar(parsed?.radar || []);
+        if (!aiRes.ok) {
+          const errorText =
+            await aiRes.text();
 
-          if (radar.length === 10) {
-            return NextResponse.json({
-              success: true,
-              radar,
-              meta: {
-                category,
-                liveMarketData: marketSignals.available,
-                source: marketSignals.message,
-              },
-            });
-          }
+          console.error(
+            "MYRIO Groq API Error:",
+            aiRes.status,
+            errorText
+          );
+
+          return NextResponse.json(
+            {
+              success: false,
+              error:
+                "MYRIO market intelligence provider returned an error.",
+              radar: [],
+            },
+            {
+              status: 502,
+            }
+          );
         }
-      } catch (error) {
-        console.error("MYRIO Trend Radar AI Error:", error);
+
+        // --------------------------------------------------------------------
+        // PARSE RESPONSE
+        // --------------------------------------------------------------------
+
+        const json =
+          (await aiRes.json()) as GroqResponse;
+
+        let rawContent =
+          json?.choices?.[0]?.message
+            ?.content || "";
+
+        if (!rawContent) {
+          return NextResponse.json(
+            {
+              success: false,
+              error:
+                "MYRIO returned an empty intelligence response.",
+              radar: [],
+            },
+            {
+              status: 502,
+            }
+          );
+        }
+
+        rawContent =
+          cleanJsonResponse(rawContent);
+
+        // --------------------------------------------------------------------
+        // JSON PARSE
+        // --------------------------------------------------------------------
+
+        let parsed: any;
+
+        try {
+          parsed = JSON.parse(
+            rawContent
+          );
+        } catch (parseError) {
+          console.error(
+            "MYRIO Radar JSON Parse Error:",
+            parseError,
+            rawContent
+          );
+
+          return NextResponse.json(
+            {
+              success: false,
+              error:
+                "MYRIO returned invalid intelligence data.",
+              radar: [],
+            },
+            {
+              status: 502,
+            }
+          );
+        }
+
+        // --------------------------------------------------------------------
+        // NORMALIZE
+        // --------------------------------------------------------------------
+
+        if (
+          !Array.isArray(parsed?.radar)
+        ) {
+          return NextResponse.json(
+            {
+              success: false,
+              error:
+                "MYRIO returned an invalid radar structure.",
+              radar: [],
+            },
+            {
+              status: 502,
+            }
+          );
+        }
+
+        const radar =
+          normalizeRadar(
+            parsed.radar
+          );
+
+        // --------------------------------------------------------------------
+        // QUALITY CHECK
+        // --------------------------------------------------------------------
+
+        if (radar.length === 0) {
+          return NextResponse.json(
+            {
+              success: false,
+              error:
+                "MYRIO could not produce valid market candidates for this category.",
+              radar: [],
+            },
+            {
+              status: 422,
+            }
+          );
+        }
+
+        // --------------------------------------------------------------------
+        // RESPONSE
+        // --------------------------------------------------------------------
+
+        return NextResponse.json({
+          success: true,
+
+          category:
+            targetCategory,
+
+          radar,
+
+          metadata: {
+            provider: "Groq",
+            model:
+              "llama-3.3-70b-versatile",
+
+            dataType:
+              "AI market assessment",
+
+            liveExternalData:
+              false,
+
+            generatedAt:
+              new Date().toISOString(),
+          },
+        });
+      } catch (error: any) {
+        console.error(
+          "MYRIO Trend Radar Error:",
+          error
+        );
+
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              error?.message ||
+              "Unable to generate MYRIO market intelligence.",
+            radar: [],
+          },
+          {
+            status: 500,
+          }
+        );
       }
-
-      /*
-       * Safe fallback: never fabricate ten products.
-       * Return only actual catalog matches.
-       */
-      const catalogMatches = products
-        .filter((product: any) => {
-          const haystack = [
-            product?.name,
-            product?.brand,
-            product?.category,
-            product?.description,
-            product?.seoTags,
-          ]
-            .filter(Boolean)
-            .join(" ")
-            .toLowerCase();
-
-          return haystack.includes(category.toLowerCase());
-        })
-        .slice(0, 10);
-
-      const radar = normalizeRadar(
-        catalogMatches.map((product: any, index: number) => ({
-          rank: index + 1,
-          model: product.name,
-          brand: product.brand,
-          demandScore: 0,
-          source: marketSignals.available
-            ? "Catalog + External Search Signals"
-            : "Local Catalog Match",
-          suggestedPrice:
-            product.offerPrice || product.price || "Not available",
-          reason:
-            "Returned from the current product catalog after the AI ranking step could not produce a complete verified set of 10.",
-        }))
-      );
-
-      return NextResponse.json({
-        success: true,
-        radar,
-        meta: {
-          category,
-          liveMarketData: marketSignals.available,
-          source: marketSignals.message,
-          partial: radar.length < 10,
-        },
-      });
     }
 
-    return jsonError("Invalid action", 400);
+    // =========================================================================
+    // INVALID ACTION
+    // =========================================================================
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Invalid action.",
+      },
+      {
+        status: 400,
+      }
+    );
   } catch (error: any) {
-    console.error("MYRIO Learning API Error:", error);
-    return jsonError(
-      error?.message || "MYRIO Learning API request failed."
+    console.error(
+      "MYRIO Learning API Error:",
+      error
+    );
+
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          error?.message ||
+          "Unexpected MYRIO learning API error.",
+      },
+      {
+        status: 500,
+      }
     );
   }
 }
