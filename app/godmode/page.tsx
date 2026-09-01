@@ -25,11 +25,7 @@ import {
   Tag,
   Archive,
   Brain,
-  ChevronRight,
   Search,
-  Sliders,
-  CheckCircle2,
-  Terminal,
   LogOut,
 } from "lucide-react";
 
@@ -387,7 +383,9 @@ function AdminDashboard() {
     }
   }, [session, fetchDashboardData]);
 
-  // Product Handlers
+  // ============================================================================
+  // PRODUCT HANDLERS
+  // ============================================================================
   const handleSaveProduct = async () => {
     try {
       setIsSyncing(true);
@@ -447,7 +445,9 @@ function AdminDashboard() {
     }
   };
 
-  // Order Handlers
+  // ============================================================================
+  // ORDER HANDLERS
+  // ============================================================================
   const handleUpdateOrderStatus = async (orderId: string, status: string) => {
     try {
       setIsSyncing(true);
@@ -493,7 +493,9 @@ function AdminDashboard() {
     }
   };
 
-  // CMS Handlers
+  // ============================================================================
+  // CMS HANDLER
+  // ============================================================================
   const handleSaveCMS = async () => {
     setIsSyncing(true);
     try {
@@ -514,6 +516,164 @@ function AdminDashboard() {
         }),
       });
       addLog("Storefront configuration synchronized.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // ============================================================================
+  // BRAND AMBASSADOR HANDLERS
+  // ============================================================================
+  const handleAddCeleb = async () => {
+    if (!newCeleb.name.trim() || !newCeleb.imageUrl.trim()) {
+      alert("Ambassador name and portrait media are required.");
+      return;
+    }
+
+    try {
+      setIsSyncing(true);
+      const res = await fetch("/api/celebrity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newCeleb),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        addLog(`Ambassador "${newCeleb.name}" enlisted.`);
+        setNewCeleb({ name: "", title: "", imageUrl: "" });
+        await fetchDashboardData(true);
+      } else {
+        alert(data.error || "Failed to enlist ambassador.");
+      }
+    } catch (err: any) {
+      console.error("Enlist Ambassador Error:", err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleDeleteCeleb = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this ambassador?")) return;
+
+    try {
+      setIsSyncing(true);
+      const res = await fetch(`/api/celebrity?id=${id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, _id: id }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        addLog("Ambassador record purged.");
+        setCelebs((prev) => prev.filter((c) => c._id !== id && c.id !== id));
+      } else {
+        alert(data.error || "Failed to delete ambassador.");
+      }
+    } catch (err: any) {
+      console.error("Delete Celeb Error:", err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // ============================================================================
+  // REVIEWS HANDLERS (INJECT, VALIDATE, SUPPRESS, ERASE)
+  // ============================================================================
+  const handleAddManualReview = async () => {
+    if (!manualReview.userName.trim() || !manualReview.comment.trim()) {
+      alert("Client alias and statement are required.");
+      return;
+    }
+
+    try {
+      setIsSyncing(true);
+      const res = await fetch("/api/reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userName: manualReview.userName.trim(),
+          comment: manualReview.comment.trim(),
+          rating: Number(manualReview.rating) || 5,
+          product: "GLOBAL",
+          visibility: "public",
+          isAdminGenerated: true,
+          media: manualReview.media || [],
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        addLog(`Verified review injected for "${manualReview.userName}".`);
+        setManualReview({
+          userName: "",
+          comment: "",
+          rating: 5,
+          product: "GLOBAL",
+          visibility: "public",
+          isAdminGenerated: true,
+          media: [],
+        });
+        await fetchDashboardData(true);
+      } else {
+        alert(data.error || data.message || "Failed to inject review.");
+      }
+    } catch (err: any) {
+      console.error("Add Review Error:", err);
+      alert("Network error injecting review.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleUpdateReviewStatus = async (id: string, status: string) => {
+    try {
+      setIsSyncing(true);
+      const res = await fetch("/api/reviews", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, _id: id, visibility: status }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        addLog(`Review status updated to ${status.toUpperCase()}.`);
+        setAllReviews((prev) =>
+          prev.map((r) => (r._id === id || r.id === id ? { ...r, visibility: status } : r))
+        );
+      } else {
+        alert(data.error || data.message || "Failed to update review status.");
+      }
+    } catch (err: any) {
+      console.error("Update Review Error:", err);
+      alert("Network error updating status.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleDeleteReview = async (id: string) => {
+    if (!confirm("Are you sure you want to permanently erase this review?")) return;
+
+    try {
+      setIsSyncing(true);
+      const res = await fetch(`/api/reviews?id=${id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, _id: id }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        addLog("Review permanently purged from vault.");
+        setAllReviews((prev) => prev.filter((r) => r._id !== id && r.id !== id));
+      } else {
+        alert(data.error || data.message || "Failed to delete review.");
+      }
+    } catch (err: any) {
+      console.error("Delete Review Error:", err);
+      alert("Network error deleting review.");
     } finally {
       setIsSyncing(false);
     }
@@ -753,8 +913,8 @@ function AdminDashboard() {
                 celebs={celebs}
                 newCeleb={newCeleb}
                 setNewCeleb={setNewCeleb}
-                handleAddCeleb={() => fetchDashboardData(true)}
-                handleDeleteCeleb={(id: string) => setCelebs(celebs.filter((c) => c._id !== id))}
+                handleAddCeleb={handleAddCeleb}
+                handleDeleteCeleb={handleDeleteCeleb}
                 PremiumUploadNode={PremiumUploadNode}
               />
             )}
@@ -763,10 +923,10 @@ function AdminDashboard() {
               <ReviewsTab
                 manualReview={manualReview}
                 setManualReview={setManualReview}
-                handleAddManualReview={() => {}}
+                handleAddManualReview={handleAddManualReview}
                 allReviews={allReviews}
-                handleUpdateReviewStatus={() => {}}
-                handleDeleteReview={() => {}}
+                handleUpdateReviewStatus={handleUpdateReviewStatus}
+                handleDeleteReview={handleDeleteReview}
                 PremiumUploadNode={PremiumUploadNode}
               />
             )}
