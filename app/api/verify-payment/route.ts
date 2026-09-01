@@ -8,6 +8,8 @@ import Razorpay from 'razorpay';
 import { z } from 'zod';
 import crypto from 'crypto';
 import { sanitizeString } from '@/lib/sanitize';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 let razorpay: any = null;
 
@@ -27,6 +29,18 @@ const paymentVerificationSchema = z.object({
 
 export async function POST(req: Request) {
   try {
+    // 🛡️ 0. AUTHORIZATION: Require authenticated user
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({
+        success: false,
+        error: "Authentication required."
+      }, { status: 401 });
+    }
+
+    const userId = (session.user as any).id;
+    const userEmail = session?.user?.email;
+
     if (!razorpay || !process.env.RAZORPAY_KEY_SECRET) {
       return NextResponse.json({
         success: false,
@@ -45,7 +59,19 @@ export async function POST(req: Request) {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, orderId } = validation.data;
     const cleanOrderId = sanitizeString(orderId, 50);
 
-    // 🛡️ Timing-Safe Cryptographic Signature Verification
+    // 🛡️ 1. AUTHORIZATION: Fetch order and verify ownership
+    const order = await Order.findOne({ orderId: { $eq: cleanOrderId } });
+    if (!order) {
+      return NextResponse.json({ success: false, error: "Order not found." }, { status: 404 });
+    }
+
+    // Check if the authenticated user owns this order
+    const isOwner = order.userId?.toString() === userId || order.customer?.email?.toLowerCase() === userEmail?.toLowerCase();
+    if (!isOwner) {
+      return NextResponse.json({ success: false, error: "Unauthorized: You do not own this order." }, { status: 403 });
+    }
+
+    // 🛡️ 2. Timing-Safe Cryptographic Signature Verification
     const secret = process.env.RAZORPAY_KEY_SECRET;
     const generatedSignature = crypto
       .createHmac('sha256', secret)
@@ -66,9 +92,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Tampered or invalid signature." }, { status: 400 });
     }
 
-    // 🛡️ Atomic Order Finalization
+    // 🛡️ 3. Atomic Order Finalization (Prevent race conditions)
     const updatedOrder = await Order.findOneAndUpdate(
-      { orderId: { $eq: cleanOrderId } },
+      {
+        orderId: { $eq: cleanOrderId },
+        paymentStatus: { $ne: 'Paid' } // Idempotency: Only update if not already paid
+      },
       {
         $set: {
           paymentStatus: 'Paid',
@@ -82,7 +111,7 @@ export async function POST(req: Request) {
     );
 
     if (!updatedOrder) {
-      return NextResponse.json({ success: false, error: "Target order record not found." }, { status: 404 });
+      return NextResponse.json({ success: false, error: "Target order record not found or already processed." }, { status: 404 });
     }
 
     return NextResponse.json({
@@ -91,7 +120,7 @@ export async function POST(req: Request) {
       order: updatedOrder
     });
   } catch (error: any) {
-    console.error("Payment Verification Error:", error);
+    console.error("Payment Verification Error:", error.message);
     return NextResponse.json({ success: false, error: "Internal server error during verification." }, { status: 500 });
   }
 }

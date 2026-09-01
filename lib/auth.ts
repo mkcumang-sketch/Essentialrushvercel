@@ -78,25 +78,8 @@ export const authOptions: NextAuthOptions = {
           throw new Error("Please enter your Phone number/Email and password.");
         }
 
-        const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
-        const adminPassword = process.env.ADMIN_PASSWORD?.trim();
         const isEmail = identifier.includes("@");
         const cleanPhone = identifier.replace(/[^\d+]/g, "");
-
-        // Godmode Admin Hardcoded Bypass
-        if (
-          adminEmail &&
-          adminPassword &&
-          identifier.toLowerCase() === adminEmail &&
-          rawPassword === adminPassword
-        ) {
-          return {
-            id: "system-admin-id",
-            name: "Godmode Admin",
-            email: adminEmail,
-            role: "SUPER_ADMIN" as UserRole,
-          };
-        }
 
         // Safe NoSQL Query with $eq
         const query = isEmail
@@ -155,13 +138,6 @@ export const authOptions: NextAuthOptions = {
         token.id = dbUser._id.toString();
         token.role = (dbUser.role as UserRole) || "USER";
         token.phone = dbUser.phone || "";
-      }
-
-      const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
-      const tokenEmail = token.email?.trim().toLowerCase();
-
-      if (adminEmail && tokenEmail && tokenEmail === adminEmail) {
-        token.role = "SUPER_ADMIN";
       }
 
       return token;

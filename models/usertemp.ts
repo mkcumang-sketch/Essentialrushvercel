@@ -92,6 +92,8 @@ export interface IUser extends Document {
   tierUpgradedAt?: Date;
 
   resetOtp?: string;
+  resetOtpHash?: string;
+  otpHash?: string;
   otpExpiry?: Date;
 
   addresses: IAddress[];
@@ -298,6 +300,16 @@ const UserSchema = new Schema<IUser>(
     },
 
     resetOtp: {
+      type: String,
+      select: false,
+    },
+
+    resetOtpHash: {
+      type: String,
+      select: false,
+    },
+
+    otpHash: {
       type: String,
       select: false,
     },

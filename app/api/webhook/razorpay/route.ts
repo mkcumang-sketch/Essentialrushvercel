@@ -29,6 +29,7 @@ interface OrderDocument {
   totalAmount?: number;
   items?: OrderItem[];
   shippingData?: Record<string, unknown>;
+  webhookProcessed?: boolean;
   [key: string]: unknown;
 }
 
@@ -69,21 +70,29 @@ export async function POST(req: Request) {
       return NextResponse.json({ received: true }, { status: 200 });
     }
 
-    const order = await OrderModel.findOne({ razorpayOrderId: String(payment.order_id) }).exec();
+    // 🛡️ ATOMIC UPDATE WITH RACE CONDITION PROTECTION
+    // Use findOneAndUpdate with condition to ensure idempotency
+    const order = await OrderModel.findOneAndUpdate(
+      {
+        razorpayOrderId: String(payment.order_id),
+        status: { $ne: "PAID" }, // Only update if not already paid
+      },
+      {
+        $set: {
+          status: "PAID",
+          razorpayPaymentId: String(payment.id),
+          webhookProcessed: true,
+        },
+      },
+      { new: true }
+    ).exec();
+
     if (!order) {
-      return NextResponse.json({ received: true, message: "Order not found" }, { status: 200 });
+      // Order already processed or not found
+      return NextResponse.json({ received: true, message: "Order already processed" }, { status: 200 });
     }
 
-    // Idempotency check
-    if (order.status === "PAID" || order.razorpayPaymentId) {
-      return NextResponse.json({ received: true, message: "Already processed" }, { status: 200 });
-    }
-
-    order.status = "PAID";
-    order.razorpayPaymentId = String(payment.id);
-    await order.save();
-
-    // Deduct stock
+    // 🛡️ STOCK DEDUCTION (atomic)
     const items = Array.isArray(order.items) ? order.items : [];
     for (const item of items) {
       if (!item.productId || (Number(item.qty) || 0) <= 0) continue;
@@ -96,12 +105,13 @@ export async function POST(req: Request) {
       }
     }
 
-    // Referral Bonus
+    // 🛡️ REFERRAL BONUS WITH IDEMPOTENCY CHECK
     const refCode = String(order.appliedReferralCode || "").trim().toUpperCase();
     if (refCode && refCode.startsWith("REF-")) {
       try {
         const referrer = await User.findOne({ myReferralCode: refCode }).exec();
         if (referrer && String(referrer._id) !== String(order.userId)) {
+          // Use findByIdAndUpdate to ensure atomic increment
           await User.findByIdAndUpdate(referrer._id, {
             $inc: { walletPoints: 100, totalReferrals: 1, totalEarned: 100 },
             $push: {
@@ -119,7 +129,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // Send confirmation email
+    // 🛡️ SEND CONFIRMATION EMAIL
     const shippingData = (order.shippingData || {}) as any;
     const email = typeof shippingData.email === "string" ? shippingData.email : "";
     if (email) {
@@ -133,7 +143,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ received: true, message: "Payment processed" }, { status: 200 });
   } catch (error: any) {
-    console.error("Webhook processing error:", error);
-    return NextResponse.json({ success: false, error: error.message || "Webhook error" }, { status: 500 });
+    console.error("Webhook processing error:", error.message);
+    return NextResponse.json({ success: false, error: "Webhook error" }, { status: 500 });
   }
 }

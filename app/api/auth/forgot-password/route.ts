@@ -2,12 +2,14 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import User from '@/models/usertemp';
 import { sendEmail } from '@/lib/mail';
-import { checkRateLimit, getRateLimitHeaders } from '@/lib/rate-limit'; // Assuming your upstash code is here
+import { checkRateLimit, getRateLimitHeaders } from '@/lib/rate-limit';
+import bcrypt from 'bcryptjs';
 
 export async function POST(req: Request) {
+  const ip = req.headers.get("x-forwarded-for") || "anonymous";
+
   try {
     // 🛡️ 1. Rate Limiting Protection (Auth Tier)
-    const ip = req.headers.get("x-forwarded-for") || "anonymous";
     const rateLimit = await checkRateLimit(ip, "auth");
     
     if (!rateLimit.success) {
@@ -50,13 +52,14 @@ export async function POST(req: Request) {
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); 
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+    const hashedOtp = await bcrypt.hash(otp, 10);
 
     await User.updateOne(
       { _id: user._id },
       {
         $set: {
-          resetOtp: otp,
+          resetOtpHash: hashedOtp,
           otpExpiry: otpExpiry,
         },
       }
@@ -87,9 +90,9 @@ export async function POST(req: Request) {
     );
 
   } catch (error: any) {
-    console.error("Forgot Password Error:", error);
+    console.error("Forgot Password Error:", error.message);
     return NextResponse.json(
-      { success: false, message: error?.message || 'Server error processing reset request.' },
+      { success: false, message: 'Server error processing reset request.' },
       { status: 500 }
     );
   }

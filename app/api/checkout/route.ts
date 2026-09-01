@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import { Order } from '@/models/Order';
 import { Product } from '@/models/Product';
+import Coupon from '@/models/Coupon';
 import AbandonedCart from '@/models/AbandonedCart';
 import mongoose from 'mongoose';
 import { revalidatePath } from 'next/cache';
@@ -45,7 +46,6 @@ export async function POST(req: Request) {
     const rateLimit = await checkRateLimit(ip, "user");
     
     if (!rateLimit.success) {
-      // Background AI Security Telemetry
       emitAiAlert({
         category: "SECURITY",
         severity: "HIGH",
@@ -121,8 +121,77 @@ export async function POST(req: Request) {
     }
 
     const shipping = verifiedSubtotal > 10000 ? 0 : 500;
-    const discount = Math.max(0, Number(body.discountApplied) || 0);
-    const verifiedTotalAmount = Math.max(0, verifiedSubtotal + shipping - discount);
+
+    // 🛡️ 4. SERVER-SIDE COUPON VALIDATION (CRITICAL SECURITY)
+    let discountAmount = 0;
+    let appliedCouponCode: string | null = null;
+
+    if (body.couponCode) {
+      const cleanCoupon = sanitizeString(body.couponCode, 30).toUpperCase();
+      
+      // Fetch coupon from database
+      const coupon = await Coupon.findOne({ 
+        code: { $eq: cleanCoupon },
+        isActive: true 
+      });
+
+      if (coupon) {
+        const now = new Date();
+        
+        // Validate expiry
+        if (coupon.validUntil && coupon.validUntil < now) {
+          return NextResponse.json(
+            { success: false, error: "Coupon has expired." },
+            { status: 400, headers: getRateLimitHeaders(rateLimit) }
+          );
+        }
+
+        // Validate start date
+        if (coupon.validFrom && coupon.validFrom > now) {
+          return NextResponse.json(
+            { success: false, error: "Coupon is not yet valid." },
+            { status: 400, headers: getRateLimitHeaders(rateLimit) }
+          );
+        }
+
+        // Validate minimum order value
+        if (coupon.minOrderValue && verifiedSubtotal < coupon.minOrderValue) {
+          return NextResponse.json(
+            { success: false, error: `Minimum order value of ₹${coupon.minOrderValue} required.` },
+            { status: 400, headers: getRateLimitHeaders(rateLimit) }
+          );
+        }
+
+        // Validate usage limit
+        if (coupon.usageLimit && coupon.usedCount >= coupon.usageLimit) {
+          return NextResponse.json(
+            { success: false, error: "Coupon usage limit exceeded." },
+            { status: 400, headers: getRateLimitHeaders(rateLimit) }
+          );
+        }
+
+        // Calculate discount based on type
+        if (coupon.discountType === 'PERCENTAGE') {
+          discountAmount = (verifiedSubtotal * coupon.discountValue) / 100;
+          // Cap discount at maxDiscount if specified
+          if (coupon.maxDiscount) {
+            discountAmount = Math.min(discountAmount, coupon.maxDiscount);
+          }
+        } else if (coupon.discountType === 'FIXED') {
+          discountAmount = coupon.discountValue;
+        }
+
+        appliedCouponCode = cleanCoupon;
+      } else {
+        return NextResponse.json(
+          { success: false, error: "Invalid coupon code." },
+          { status: 400, headers: getRateLimitHeaders(rateLimit) }
+        );
+      }
+    }
+
+    // 🛡️ 5. Prevent negative totals
+    const verifiedTotalAmount = Math.max(0, verifiedSubtotal + shipping - discountAmount);
 
     const orderId = `ORD-${Date.now().toString().slice(-6)}`;
     const newOrder = await Order.create({
@@ -145,13 +214,21 @@ export async function POST(req: Request) {
       totalAmount: verifiedTotalAmount,
       paymentStatus: body.paymentStatus === 'Paid' ? 'Paid' : 'Pending',
       status: 'Processing',
-      couponCode: body.couponCode ? sanitizeString(body.couponCode, 20).toUpperCase() : null,
+      couponCode: appliedCouponCode,
       referralCode: body.referralCode ? sanitizeString(body.referralCode, 30).toUpperCase() : null,
-      discountApplied: discount,
+      discountApplied: discountAmount,
       isRewardCredited: false
     });
 
-    // 🛡️ 4. High Valuation / Fraud Detection Alert
+    // 🛡️ 6. Increment coupon usage count (atomic)
+    if (appliedCouponCode) {
+      await Coupon.findOneAndUpdate(
+        { code: { $eq: appliedCouponCode } },
+        { $inc: { usedCount: 1 } }
+      );
+    }
+
+    // 🛡️ 7. High Valuation / Fraud Detection Alert
     if (verifiedTotalAmount >= 100000) {
       emitAiAlert({
         category: "ORDERS",
@@ -165,7 +242,7 @@ export async function POST(req: Request) {
       });
     }
 
-    // 🛡️ 5. Referral / Agent Commission Processing
+    // 🛡️ 8. Referral / Agent Commission Processing
     if (body.referralCode) {
       const cleanCode = sanitizeString(body.referralCode, 30).toUpperCase();
       const safeCodeRegex = new RegExp(`^${escapeRegex(cleanCode)}$`, 'i');
@@ -186,7 +263,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // 🛡️ 6. Sync Abandoned Cart status to CONVERTED
+    // 🛡️ 9. Sync Abandoned Cart status to CONVERTED
     await AbandonedCart.updateOne(
       { $or: [{ phone: cleanPhone }, { email: cleanEmail }] },
       { $set: { status: 'CONVERTED' } }
@@ -204,7 +281,6 @@ export async function POST(req: Request) {
     const errorInfo = handleError(error);
     console.error("❌ POST Checkout Error:", errorInfo);
     
-    // Telemetry Incident Dispatch on Checkout Failure
     emitAiIncident({
       service: "Commerce Checkout",
       route: "/api/checkout",

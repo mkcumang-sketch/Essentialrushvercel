@@ -72,28 +72,34 @@ export async function checkRateLimit(
   type: "user" | "auth" | "admin" = "user"
 ): Promise<{ success: boolean; limit: number; remaining: number; reset: number }> {
   try {
-    if (redis) {
-      const limiter = type === "auth" ? authRateLimit : type === "admin" ? adminRateLimit : userRateLimit;
-      if (limiter) {
-        const result = await limiter.limit(identifier);
-        return {
-          success: result.success,
-          limit: result.limit,
-          remaining: result.remaining,
-          reset: result.reset,
-        };
-      }
+    if (!redis) {
+      // Fallback if Redis is not configured - use in-memory limiter
+      const limits = { auth: 10, user: 60, admin: 100 };
+      return await dummyLimiter.limit(`${type}:${identifier}`, limits[type] || 60);
     }
 
-    // Fallback limit counts
+    // If Redis is configured, use it
+    const limiter = type === "auth" ? authRateLimit : type === "admin" ? adminRateLimit : userRateLimit;
+    if (limiter) {
+      const result = await limiter.limit(identifier);
+      return {
+        success: result.success,
+        limit: result.limit,
+        remaining: result.remaining,
+        reset: result.reset,
+      };
+    }
+
+    // Fallback if limiter is null
     const limits = { auth: 10, user: 60, admin: 100 };
     return await dummyLimiter.limit(`${type}:${identifier}`, limits[type] || 60);
   } catch (error) {
     console.error("❌ Rate limit check failed:", error);
+    // 🛡️ CRITICAL FIX: On error, return FAILURE to be safe
     return {
-      success: true,
+      success: false,
       limit: 100,
-      remaining: 99,
+      remaining: 0,
       reset: Math.ceil((Date.now() + 60000) / 1000),
     };
   }

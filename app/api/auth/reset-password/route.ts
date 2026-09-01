@@ -5,9 +5,10 @@ import bcrypt from 'bcryptjs';
 import { checkRateLimit, getRateLimitHeaders } from '@/lib/rate-limit';
 
 export async function POST(req: Request) {
+  const ip = req.headers.get("x-forwarded-for") || "anonymous";
+
   try {
     // 🛡️ 1. Rate Limiting Protection (Auth Tier)
-    const ip = req.headers.get("x-forwarded-for") || "anonymous";
     const rateLimit = await checkRateLimit(ip, "auth");
 
     if (!rateLimit.success) {
@@ -49,18 +50,47 @@ export async function POST(req: Request) {
 
     await connectDB();
 
+    // 🛡️ 4. Fetch user and verify OTP hash with bcrypt
+    const user = await User.findOne({
+      email: { $eq: cleanEmail },
+    }).select("+resetOtpHash +otpExpiry").exec();
+
+    if (!user || !user.resetOtpHash) {
+      return NextResponse.json(
+        { success: false, message: "Invalid, expired, or already used OTP." },
+        { status: 400, headers: getRateLimitHeaders(rateLimit) }
+      );
+    }
+
+    // Check expiration
+    if (user.otpExpiry && new Date() > new Date(user.otpExpiry)) {
+      return NextResponse.json(
+        { success: false, message: "Invalid, expired, or already used OTP." },
+        { status: 400, headers: getRateLimitHeaders(rateLimit) }
+      );
+    }
+
+    // Verify OTP with bcrypt
+    const isValidOtp = await bcrypt.compare(cleanOtp, user.resetOtpHash);
+    if (!isValidOtp) {
+      return NextResponse.json(
+        { success: false, message: "Invalid, expired, or already used OTP." },
+        { status: 400, headers: getRateLimitHeaders(rateLimit) }
+      );
+    }
+
     const hashedPassword = await bcrypt.hash(rawPassword, 12);
 
-    // 🛡️ 4. ATOMIC UNSET & REPLAY ATTACK DEFENSE
-    // Verification, Expiration check, Password update, aur OTP delete ek hi atomic operation mein execute hota hai.
+    // 🛡️ 5. ATOMIC UNSET & REPLAY ATTACK DEFENSE
+    // Verification, Expiration check, Password update, and OTP delete in one atomic operation
     const verifiedUser = await User.findOneAndUpdate(
       {
-        email: { $eq: cleanEmail },
-        resetOtp: { $eq: cleanOtp },
+        _id: user._id,
+        resetOtpHash: user.resetOtpHash, // Double check the hash hasn't changed
         otpExpiry: { $gt: new Date() }, // Ensures token is not expired
       },
       {
-        $unset: { resetOtp: 1, otpExpiry: 1 }, // Instantly burns the token
+        $unset: { resetOtpHash: 1, otpExpiry: 1 },
         $set: { password: hashedPassword },
       },
       { new: true }
@@ -81,7 +111,7 @@ export async function POST(req: Request) {
       { status: 200, headers: getRateLimitHeaders(rateLimit) }
     );
   } catch (error: any) {
-    console.error("Reset Password Error:", error);
+    console.error("Reset Password Error:", error.message);
     return NextResponse.json(
       { success: false, message: "Server error processing password update." },
       { status: 500 }

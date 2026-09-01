@@ -2,21 +2,34 @@ import { NextResponse } from "next/server";
 import connectDB from "@/lib/mongodb";
 import User from "@/models/usertemp";
 import bcrypt from "bcryptjs";
+import { checkRateLimit, getRateLimitHeaders } from "@/lib/rate-limit";
 
 export async function POST(req: Request) {
+  const ip = req.headers.get("x-forwarded-for") || "anonymous";
+
   try {
-    // 🛡️ 1. LPDoS Protection: Payload size check (Max 10KB)
+    // 🛡️ 1. Rate Limiting Protection (Auth Tier)
+    const rateLimit = await checkRateLimit(ip, "auth");
+    
+    if (!rateLimit.success) {
+      return NextResponse.json(
+        { success: false, error: "Too many registration attempts. Please try again later." },
+        { status: 429, headers: getRateLimitHeaders(rateLimit) }
+      );
+    }
+
+    // 🛡️ 2. LPDoS Protection: Payload size check (Max 10KB)
     const contentLength = Number(req.headers.get("content-length") || 0);
     if (contentLength > 10 * 1024) {
       return NextResponse.json(
         { success: false, error: "Payload too large." },
-        { status: 413 }
+        { status: 413, headers: getRateLimitHeaders(rateLimit) }
       );
     }
 
     const body = await req.json();
 
-    // 🛡️ 2. NoSQL Injection & Type Safety: Force primitive strings
+    // 🛡️ 3. NoSQL Injection & Type Safety: Force primitive strings
     const name = String(body?.name || "").trim().slice(0, 60);
     const rawInput = String(body?.phone || body?.email || "").trim();
     const password = String(body?.password || "");
@@ -24,14 +37,14 @@ export async function POST(req: Request) {
     if (!rawInput) {
       return NextResponse.json(
         { success: false, error: "Please enter your Email or Phone number." },
-        { status: 400 }
+        { status: 400, headers: getRateLimitHeaders(rateLimit) }
       );
     }
 
     if (!password || password.length < 6 || password.length > 128) {
       return NextResponse.json(
         { success: false, error: "Password must be between 6 and 128 characters." },
-        { status: 400 }
+        { status: 400, headers: getRateLimitHeaders(rateLimit) }
       );
     }
 
@@ -46,7 +59,7 @@ export async function POST(req: Request) {
       if (!userPhone) {
         return NextResponse.json(
           { success: false, error: "Invalid phone number format." },
-          { status: 400 }
+          { status: 400, headers: getRateLimitHeaders(rateLimit) }
         );
       }
       userEmail = `${userPhone}@vault.essentialrush.com`;
@@ -54,7 +67,7 @@ export async function POST(req: Request) {
 
     await connectDB();
 
-    // 🛡️ 3. Safe Query with $eq operators to prevent query object injection
+    // 🛡️ 4. Safe Query with $eq operators to prevent query object injection
     const existingUser = await User.findOne({
       $or: [
         { email: { $eq: userEmail } },
@@ -65,7 +78,7 @@ export async function POST(req: Request) {
     if (existingUser) {
       return NextResponse.json(
         { success: false, error: "An account with these details already exists. Please log in." },
-        { status: 409 }
+        { status: 409, headers: getRateLimitHeaders(rateLimit) }
       );
     }
 
@@ -88,9 +101,9 @@ export async function POST(req: Request) {
         email: newUser.email,
         phone: newUser.phone,
       },
-    });
+    }, { status: 201, headers: getRateLimitHeaders(rateLimit) });
   } catch (error: any) {
-    console.error("Registration Error:", error);
+    console.error("Registration Error:", error.message);
     return NextResponse.json(
       { success: false, error: "Internal server error. Please try again." },
       { status: 500 }
