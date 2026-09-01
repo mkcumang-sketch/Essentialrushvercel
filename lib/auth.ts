@@ -4,8 +4,8 @@ import GoogleProvider from "next-auth/providers/google";
 import connectDB from "@/lib/mongodb";
 import User from "@/models/usertemp";
 import bcrypt from "bcryptjs";
+import { sanitizeString, sanitizeEmail, sanitizePhone, validatePasswordStrength } from "@/lib/sanitize";
 
-// ✅ Added AGENT and STAFF to UserRole
 export type UserRole = "USER" | "AGENT" | "STAFF" | "ADMIN" | "SUPER_ADMIN";
 
 declare module "next-auth" {
@@ -69,21 +69,29 @@ export const authOptions: NextAuthOptions = {
       },
 
       async authorize(credentials) {
-        await connectDB();
+        // 🛡️ 1. Input Sanitization & String Clamping (LPDoS Defense)
+        const rawIdentifier = sanitizeString(credentials?.phone || credentials?.email, 100);
+        const rawPassword = typeof credentials?.password === "string" ? credentials.password : "";
 
-        const identifier = String(credentials?.phone || credentials?.email || "").trim();
-        const rawPassword = String(credentials?.password || "");
-
-        if (!identifier || !rawPassword) {
+        if (!rawIdentifier || !rawPassword) {
           throw new Error("Please enter your Phone number/Email and password.");
         }
 
-        const isEmail = identifier.includes("@");
-        const cleanPhone = identifier.replace(/[^\d+]/g, "");
+        // 🛡️ 2. Strict Exact 8-Character Password Enforcement
+        const passwordCheck = validatePasswordStrength(rawPassword);
+        if (!passwordCheck.isValid) {
+          throw new Error(passwordCheck.error || "Password must be exactly 8 characters with required complexity.");
+        }
 
-        // Safe NoSQL Query with $eq
+        await connectDB();
+
+        const isEmail = rawIdentifier.includes("@");
+        const cleanPhone = sanitizePhone(rawIdentifier);
+        const cleanEmail = sanitizeEmail(rawIdentifier);
+
+        // 🛡️ 3. Safe NoSQL Query with $eq operators to prevent query object injection
         const query = isEmail
-          ? { email: { $eq: identifier.toLowerCase() } }
+          ? { email: { $eq: cleanEmail } }
           : { phone: { $eq: cleanPhone } };
 
         const user = await User.findOne(query).select("+password").exec();
@@ -116,22 +124,22 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user, account }) {
       if (user) {
         token.id = user.id;
-        token.role = (user as any).role || "USER";
-        token.phone = (user as any).phone || "";
+        token.role = (user.role as UserRole) || "USER";
+        token.phone = user.phone || "";
       }
 
       if (account?.provider === "google" && token.email) {
         await connectDB();
-        const cleanEmail = token.email.toLowerCase().trim();
+        const cleanEmail = sanitizeEmail(token.email);
 
         let dbUser = await User.findOne({ email: { $eq: cleanEmail } });
 
         if (!dbUser) {
           dbUser = await User.create({
-            name: token.name || "Vault Member",
+            name: sanitizeString(token.name, 60) || "Vault Member",
             email: cleanEmail,
             role: "USER",
-            image: token.picture || "",
+            image: typeof token.picture === "string" ? token.picture : "",
           });
         }
 

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, Lock, User, Phone, ShieldCheck, ArrowRight, RefreshCcw, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import ForgotPasswordModal from "@/components/ForgotPasswordModal";
+import { validatePasswordStrength } from "@/lib/sanitize";
 
 export default function LoginPortal() {
   const router = useRouter();
@@ -56,8 +57,9 @@ export default function LoginPortal() {
       return;
     }
 
-    if (password.length < 6) {
-      setErrorMessage("Password must be at least 6 characters.");
+    const passwordCheck = validatePasswordStrength(password);
+    if (!passwordCheck.isValid) {
+      setErrorMessage(passwordCheck.error || "Password must be exactly 8 characters with letters, numbers, and symbols.");
       return;
     }
 
@@ -104,6 +106,11 @@ export default function LoginPortal() {
 
     if (!phone || !password) {
       setErrorMessage("Please enter your phone number and password.");
+      return;
+    }
+
+    if (password.length !== 8) {
+      setErrorMessage("Password must be exactly 8 characters long.");
       return;
     }
 
@@ -232,11 +239,16 @@ export default function LoginPortal() {
               <input
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                maxLength={8}
+                onChange={(e) => {
+                  if (e.target.value.length <= 8) {
+                    setPassword(e.target.value);
+                  }
+                }}
                 required
                 disabled={isLoading}
-                className="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm outline-none focus:border-black transition-all disabled:opacity-50"
-                placeholder="Password"
+                className="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm outline-none focus:border-black transition-all disabled:opacity-50 font-mono"
+                placeholder="Password (Exact 8 chars: A-Z, a-z, 0-9, @#$)"
               />
             </div>
 
