@@ -17,8 +17,20 @@ if (hasRedisEnv) {
   }
 }
 
-// In-memory fallback if Redis credentials are not present
+// In-memory fallback map with memory leak protection
 const inMemoryFallback = new Map<string, { count: number; reset: number }>();
+
+// Auto-cleanup stale memory records every 60s
+if (typeof setInterval !== "undefined") {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, record] of inMemoryFallback.entries()) {
+      if (now > record.reset) {
+        inMemoryFallback.delete(key);
+      }
+    }
+  }, 60000);
+}
 
 const dummyLimiter = {
   limit: async (identifier: string, limitCount = 60) => {
@@ -28,16 +40,41 @@ const dummyLimiter = {
 
     if (!current || now > current.reset) {
       inMemoryFallback.set(identifier, { count: 1, reset: now + windowMs });
-      return { success: true, limit: limitCount, remaining: limitCount - 1, reset: Math.ceil((now + windowMs) / 1000) };
+      return {
+        success: true,
+        limit: limitCount,
+        remaining: limitCount - 1,
+        reset: Math.ceil((now + windowMs) / 1000),
+      };
     }
 
     if (current.count >= limitCount) {
-      return { success: false, limit: limitCount, remaining: 0, reset: Math.ceil(current.reset / 1000) };
+      return {
+        success: false,
+        limit: limitCount,
+        remaining: 0,
+        reset: Math.ceil(current.reset / 1000),
+      };
     }
 
     current.count += 1;
-    return { success: true, limit: limitCount, remaining: limitCount - current.count, reset: Math.ceil(current.reset / 1000) };
+    return {
+      success: true,
+      limit: limitCount,
+      remaining: limitCount - current.count,
+      reset: Math.ceil(current.reset / 1000),
+    };
   },
+};
+
+export type RateLimitType = "user" | "auth" | "admin" | "ai" | "sensitive";
+
+const TIER_LIMITS: Record<RateLimitType, number> = {
+  auth: 5,        // 5 req / min (Login, OTP, Register)
+  ai: 15,         // 15 req / min (MYRIO Chat, Groq)
+  sensitive: 5,   // 5 req / min (Withdrawals, Pass Reset)
+  user: 60,       // 60 req / min (Standard User Actions)
+  admin: 120,     // 120 req / min (Godmode Operations)
 };
 
 export const userRateLimit = redis
@@ -52,16 +89,25 @@ export const userRateLimit = redis
 export const authRateLimit = redis
   ? new Ratelimit({
       redis,
-      limiter: Ratelimit.slidingWindow(10, "1 m"),
+      limiter: Ratelimit.slidingWindow(5, "1 m"),
       analytics: true,
       prefix: "ratelimit:auth",
+    })
+  : null;
+
+export const aiRateLimit = redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(15, "1 m"),
+      analytics: true,
+      prefix: "ratelimit:ai",
     })
   : null;
 
 export const adminRateLimit = redis
   ? new Ratelimit({
       redis,
-      limiter: Ratelimit.slidingWindow(100, "1 m"),
+      limiter: Ratelimit.slidingWindow(120, "1 m"),
       analytics: true,
       prefix: "ratelimit:admin",
     })
@@ -69,17 +115,24 @@ export const adminRateLimit = redis
 
 export async function checkRateLimit(
   identifier: string,
-  type: "user" | "auth" | "admin" = "user"
+  type: RateLimitType = "user"
 ): Promise<{ success: boolean; limit: number; remaining: number; reset: number }> {
   try {
+    const limitCount = TIER_LIMITS[type] || 60;
+
     if (!redis) {
-      // Fallback if Redis is not configured - use in-memory limiter
-      const limits = { auth: 10, user: 60, admin: 100 };
-      return await dummyLimiter.limit(`${type}:${identifier}`, limits[type] || 60);
+      return await dummyLimiter.limit(`${type}:${identifier}`, limitCount);
     }
 
-    // If Redis is configured, use it
-    const limiter = type === "auth" ? authRateLimit : type === "admin" ? adminRateLimit : userRateLimit;
+    const limiter =
+      type === "auth"
+        ? authRateLimit
+        : type === "ai"
+        ? aiRateLimit
+        : type === "admin"
+        ? adminRateLimit
+        : userRateLimit;
+
     if (limiter) {
       const result = await limiter.limit(identifier);
       return {
@@ -90,22 +143,20 @@ export async function checkRateLimit(
       };
     }
 
-    // Fallback if limiter is null
-    const limits = { auth: 10, user: 60, admin: 100 };
-    return await dummyLimiter.limit(`${type}:${identifier}`, limits[type] || 60);
+    return await dummyLimiter.limit(`${type}:${identifier}`, limitCount);
   } catch (error) {
     console.error("❌ Rate limit check failed:", error);
-    // 🛡️ CRITICAL FIX: On error, return FAILURE to be safe
-    return {
-      success: false,
-      limit: 100,
-      remaining: 0,
-      reset: Math.ceil((Date.now() + 60000) / 1000),
-    };
+    // Fail-safe: In-memory fallback on Redis drop
+    return await dummyLimiter.limit(`${type}:${identifier}`, TIER_LIMITS[type] || 60);
   }
 }
 
-export function getRateLimitHeaders(result: { success: boolean; limit: number; remaining: number; reset: number }): HeadersInit {
+export function getRateLimitHeaders(result: {
+  success: boolean;
+  limit: number;
+  remaining: number;
+  reset: number;
+}): HeadersInit {
   return {
     "X-RateLimit-Limit": String(result.limit),
     "X-RateLimit-Remaining": String(result.remaining),

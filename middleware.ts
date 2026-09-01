@@ -24,13 +24,30 @@ export default withAuth(
       return NextResponse.redirect(new URL("/login?callbackUrl=/agent", req.url));
     }
 
-    return NextResponse.next();
+    const res = NextResponse.next();
+
+    // 3. Global Hardened Security Headers
+    res.headers.set("X-Frame-Options", "DENY");
+    res.headers.set("X-Content-Type-Options", "nosniff");
+    res.headers.set("X-XSS-Protection", "1; mode=block");
+    res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.headers.set(
+      "Permissions-Policy",
+      "camera=(), microphone=(), geolocation=(), browsing-topics=()"
+    );
+
+    return res;
   },
   {
     callbacks: {
       authorized: ({ token, req }) => {
         const pathname = req.nextUrl.pathname;
-        if (pathname.startsWith("/api/checkout")) {
+        // Public API routes allow guest access
+        if (
+          pathname.startsWith("/api/checkout") ||
+          pathname.startsWith("/api/myrio/customer") ||
+          pathname.startsWith("/api/products")
+        ) {
           return true;
         }
         return Boolean(token);
@@ -47,5 +64,6 @@ export const config = {
     "/godmode/:path*",
     "/api/godmode/:path*",
     "/agent/:path*",
+    "/account/:path*",
   ],
 };
