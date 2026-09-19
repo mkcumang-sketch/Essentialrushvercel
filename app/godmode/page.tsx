@@ -27,6 +27,8 @@ import {
   Brain,
   Search,
   LogOut,
+  Menu,
+  X,
 } from "lucide-react";
 
 // TABS IMPORTS
@@ -61,9 +63,7 @@ import type {
   AgentForm,
 } from "@/types/godmode";
 
-// ============================================================================
 // MODULE ARCHITECTURE & CATEGORIZATION
-// ============================================================================
 interface ModuleItem {
   id: string;
   icon: any;
@@ -116,9 +116,7 @@ const MODULE_CATEGORIES: ModuleCategory[] = [
   },
 ];
 
-// ============================================================================
 // UPLOAD NODE COMPONENT
-// ============================================================================
 interface PremiumUploadNodeProps {
   onUploadSuccess: (url: string) => void;
   placeholder?: string;
@@ -173,7 +171,7 @@ const PremiumUploadNode = ({
         const file = e.dataTransfer.files?.[0];
         if (file) handleUpload(file);
       }}
-      className={`w-28 h-28 shrink-0 rounded-2xl border transition-all flex flex-col items-center justify-center p-3 cursor-pointer group ${
+      className={`w-24 h-24 md:w-28 md:h-28 shrink-0 rounded-2xl border transition-all flex flex-col items-center justify-center p-2 cursor-pointer group ${
         dragging
           ? "border-[#D4AF37] bg-[#D4AF37]/10"
           : "border-white/10 bg-white/[0.02] hover:border-[#D4AF37]/50"
@@ -199,7 +197,7 @@ const PremiumUploadNode = ({
             <img src={preview} alt="Uploaded" className="w-full h-full object-cover rounded-xl" />
           )
         ) : (
-          <span className="text-[9px] uppercase tracking-wider text-gray-500 font-bold group-hover:text-gray-300">
+          <span className="text-[9px] uppercase tracking-wider text-gray-500 font-bold group-hover:text-gray-300 text-center">
             {placeholder}
           </span>
         )}
@@ -208,15 +206,14 @@ const PremiumUploadNode = ({
   );
 };
 
-// ============================================================================
 // ADMIN CONSOLE CORE
-// ============================================================================
 function AdminDashboard() {
   const { data: session, status } = useSession();
 
   const [activeTab, setActiveTab] = useState("FULL_DASHBOARD");
   const [navSearch, setNavSearch] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile Drawer State
   const [dashboardView, setDashboardView] = useState<"orders" | "abandoned">("orders");
   const [systemLogs, setSystemLogs] = useState<string[]>(["Core initialization completed."]);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
@@ -383,9 +380,7 @@ function AdminDashboard() {
     }
   }, [session, fetchDashboardData]);
 
-  // ============================================================================
-  // PRODUCT HANDLERS
-  // ============================================================================
+  // Product Handlers
   const handleSaveProduct = async () => {
     try {
       setIsSyncing(true);
@@ -445,9 +440,7 @@ function AdminDashboard() {
     }
   };
 
-  // ============================================================================
-  // ORDER HANDLERS
-  // ============================================================================
+  // Order Handlers
   const handleUpdateOrderStatus = async (orderId: string, status: string) => {
     try {
       setIsSyncing(true);
@@ -493,9 +486,7 @@ function AdminDashboard() {
     }
   };
 
-  // ============================================================================
-  // CMS HANDLER
-  // ============================================================================
+  // CMS Handler
   const handleSaveCMS = async () => {
     setIsSyncing(true);
     try {
@@ -521,9 +512,7 @@ function AdminDashboard() {
     }
   };
 
-  // ============================================================================
-  // BRAND AMBASSADOR HANDLERS
-  // ============================================================================
+  // Ambassador Handlers
   const handleAddCeleb = async () => {
     if (!newCeleb.name.trim() || !newCeleb.imageUrl.trim()) {
       alert("Ambassador name and portrait media are required.");
@@ -578,9 +567,7 @@ function AdminDashboard() {
     }
   };
 
-  // ============================================================================
-  // REVIEWS HANDLERS (INJECT, VALIDATE, SUPPRESS, ERASE)
-  // ============================================================================
+  // Reviews Handlers
   const handleAddManualReview = async () => {
     if (!manualReview.userName.trim() || !manualReview.comment.trim()) {
       alert("Client alias and statement are required.");
@@ -723,125 +710,180 @@ function AdminDashboard() {
     );
   }
 
+  // Common Navigation Component for Desktop and Mobile
+  const NavContent = () => (
+    <div className="flex flex-col h-full">
+      {/* Identity Badge */}
+      <div className="p-6 border-b border-white/10 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/15 border border-[#D4AF37]/40 flex items-center justify-center text-[#D4AF37]">
+            <ShieldCheck size={20} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-white uppercase tracking-wider">{session.user?.name}</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            </div>
+            <p className="text-[9px] text-[#D4AF37] font-mono uppercase tracking-widest">Master Authority</p>
+          </div>
+        </div>
+        {/* Close Button on Mobile Drawer */}
+        <button
+          onClick={() => setIsMobileMenuOpen(false)}
+          className="lg:hidden p-2 text-gray-400 hover:text-white"
+        >
+          <X size={20} />
+        </button>
+      </div>
+
+      {/* Quick Navigation Filter */}
+      <div className="p-4 border-b border-white/5">
+        <div className="relative">
+          <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+          <input
+            type="text"
+            value={navSearch}
+            onChange={(e) => setNavSearch(e.target.value)}
+            placeholder="Search console modules..."
+            className="w-full bg-white/[0.03] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder:text-gray-500 outline-none focus:border-[#D4AF37] transition-colors"
+          />
+        </div>
+      </div>
+
+      {/* Categorized Navigation */}
+      <nav className="flex-1 p-4 space-y-6 overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-white/10">
+        {filteredCategories.map((cat, idx) => (
+          <div key={idx} className="space-y-1.5">
+            <p className="text-[9px] font-black uppercase tracking-[0.25em] text-gray-500 px-3 pb-1">
+              {cat.category}
+            </p>
+            {cat.modules.map((m) => {
+              const Icon = m.icon;
+              const isActive = activeTab === m.id;
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => {
+                    setActiveTab(m.id);
+                    setIsMobileMenuOpen(false); // Mobile auto-close on selection
+                  }}
+                  className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-medium transition-all cursor-pointer ${
+                    isActive
+                      ? "bg-[#D4AF37] text-black font-bold shadow-[0_4px_20px_rgba(212,175,55,0.25)]"
+                      : "text-gray-400 hover:text-white hover:bg-white/[0.04]"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Icon size={16} className={isActive ? "text-black" : "text-gray-400"} />
+                    <span>{m.label}</span>
+                  </div>
+                  {m.badge && (
+                    <span
+                      className={`text-[8px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider ${
+                        isActive ? "bg-black text-[#D4AF37]" : "bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/30"
+                      }`}
+                    >
+                      {m.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+
+      {/* Sign Out */}
+      <div className="p-4 border-t border-white/10">
+        <button
+          onClick={() => signOut({ callbackUrl: "/" })}
+          className="w-full py-3 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white border border-red-500/20 rounded-xl text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 cursor-pointer"
+        >
+          <LogOut size={14} /> Terminate Session
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="h-screen overflow-hidden bg-[#07090b] text-gray-200 flex font-sans selection:bg-[#D4AF37] selection:text-black">
       {/* BACKGROUND MESH */}
       <div className="fixed inset-0 pointer-events-none z-0 bg-[radial-gradient(#ffffff08_1px,transparent_1px)] [background-size:24px_24px]" />
 
       {/* =====================================================================
-          SIDEBAR: ENTERPRISE LUXURY
+          DESKTOP SIDEBAR
       ====================================================================== */}
       <aside className="hidden lg:flex w-[320px] bg-[#0A0D10] border-r border-white/10 flex-col z-50 shrink-0 select-none">
-        {/* Identity Badge */}
-        <div className="p-6 border-b border-white/10 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/15 border border-[#D4AF37]/40 flex items-center justify-center text-[#D4AF37]">
-              <ShieldCheck size={20} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-white uppercase tracking-wider">{session.user?.name}</span>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              </div>
-              <p className="text-[9px] text-[#D4AF37] font-mono uppercase tracking-widest">Master Authority</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Navigation Filter */}
-        <div className="p-4 border-b border-white/5">
-          <div className="relative">
-            <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-            <input
-              type="text"
-              value={navSearch}
-              onChange={(e) => setNavSearch(e.target.value)}
-              placeholder="Search console modules..."
-              className="w-full bg-white/[0.03] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder:text-gray-500 outline-none focus:border-[#D4AF37] transition-colors"
-            />
-          </div>
-        </div>
-
-        {/* Categorized Navigation */}
-        <nav className="flex-1 p-4 space-y-6 overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-white/10">
-          {filteredCategories.map((cat, idx) => (
-            <div key={idx} className="space-y-1.5">
-              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-gray-500 px-3 pb-1">
-                {cat.category}
-              </p>
-              {cat.modules.map((m) => {
-                const Icon = m.icon;
-                const isActive = activeTab === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    onClick={() => setActiveTab(m.id)}
-                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
-                      isActive
-                        ? "bg-[#D4AF37] text-black font-bold shadow-[0_4px_20px_rgba(212,175,55,0.25)]"
-                        : "text-gray-400 hover:text-white hover:bg-white/[0.04]"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Icon size={16} className={isActive ? "text-black" : "text-gray-400"} />
-                      <span>{m.label}</span>
-                    </div>
-                    {m.badge && (
-                      <span
-                        className={`text-[8px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider ${
-                          isActive ? "bg-black text-[#D4AF37]" : "bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/30"
-                        }`}
-                      >
-                        {m.badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
-        </nav>
-
-        {/* Sign Out */}
-        <div className="p-4 border-t border-white/10">
-          <button
-            onClick={() => signOut({ callbackUrl: "/" })}
-            className="w-full py-3 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white border border-red-500/20 rounded-xl text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <LogOut size={14} /> Terminate Session
-          </button>
-        </div>
+        <NavContent />
       </aside>
+
+      {/* =====================================================================
+          MOBILE DRAWER SLIDE-OVER
+      ====================================================================== */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 lg:hidden"
+            />
+            <motion.aside
+              initial={{ x: "-100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "-100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="fixed inset-y-0 left-0 w-[290px] sm:w-[320px] bg-[#0A0D10] border-r border-white/10 z-50 flex flex-col lg:hidden select-none shadow-2xl"
+            >
+              <NavContent />
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* =====================================================================
           MAIN EXECUTIVE VIEWPORT
       ====================================================================== */}
       <main className="flex-1 min-w-0 flex flex-col h-screen min-h-0 overflow-hidden relative z-10 bg-[#07090b]">
         {/* Top Header Status Bar */}
-        <header className="sticky top-0 z-40 bg-[#07090b]/80 backdrop-blur-xl border-b border-white/10 px-6 lg:px-10 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <div className="flex items-center gap-2 text-[9px] uppercase tracking-widest font-mono text-gray-500">
-              <span>Security Clearance</span>
-              <span>•</span>
-              <span className="text-emerald-400">Encrypted</span>
+        <header className="sticky top-0 z-40 bg-[#07090b]/90 backdrop-blur-xl border-b border-white/10 px-4 md:px-8 py-3.5 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            {/* Hamburger Button for Mobile */}
+            <button
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="lg:hidden p-2 rounded-xl bg-white/5 border border-white/10 text-gray-300 hover:text-white hover:border-[#D4AF37]"
+            >
+              <Menu size={18} />
+            </button>
+
+            <div>
+              <div className="flex items-center gap-2 text-[8px] md:text-[9px] uppercase tracking-widest font-mono text-gray-500">
+                <span>Clearance</span>
+                <span>•</span>
+                <span className="text-emerald-400">Encrypted</span>
+              </div>
+              <h1 className="text-base md:text-xl font-serif font-bold text-white mt-0.5 truncate max-w-[200px] sm:max-w-none">
+                {activeModuleLabel}
+              </h1>
             </div>
-            <h1 className="text-xl md:text-2xl font-serif font-bold text-white mt-0.5">{activeModuleLabel}</h1>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => fetchDashboardData(false)}
               disabled={isSyncing}
-              className="px-4 py-2.5 bg-white/[0.04] hover:bg-[#D4AF37] hover:text-black border border-white/10 rounded-xl text-xs font-bold uppercase tracking-wider text-gray-300 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              className="px-3 py-2 md:px-4 md:py-2.5 bg-white/[0.04] hover:bg-[#D4AF37] hover:text-black border border-white/10 rounded-xl text-[11px] md:text-xs font-bold uppercase tracking-wider text-gray-300 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
             >
-              <RefreshCcw size={14} className={isSyncing ? "animate-spin text-[#D4AF37]" : ""} />
-              {isSyncing ? "Syncing..." : "Sync Database"}
+              <RefreshCcw size={13} className={isSyncing ? "animate-spin text-[#D4AF37]" : ""} />
+              <span className="hidden sm:inline">{isSyncing ? "Syncing..." : "Sync Database"}</span>
             </button>
           </div>
         </header>
 
         {/* Main Work Area */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-6 lg:p-10 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-white/10">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8 lg:p-10 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-white/10">
           <AnimatePresence mode="wait">
             {activeTab === "FULL_DASHBOARD" && (
               <DashboardTab
