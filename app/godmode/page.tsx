@@ -63,7 +63,6 @@ import type {
   AgentForm,
 } from "@/types/godmode";
 
-// MODULE ARCHITECTURE & CATEGORIZATION
 interface ModuleItem {
   id: string;
   icon: any;
@@ -116,7 +115,6 @@ const MODULE_CATEGORIES: ModuleCategory[] = [
   },
 ];
 
-// UPLOAD NODE COMPONENT
 interface PremiumUploadNodeProps {
   onUploadSuccess: (url: string) => void;
   placeholder?: string;
@@ -206,20 +204,18 @@ const PremiumUploadNode = ({
   );
 };
 
-// ADMIN CONSOLE CORE
 function AdminDashboard() {
   const { data: session, status } = useSession();
 
   const [activeTab, setActiveTab] = useState("FULL_DASHBOARD");
   const [navSearch, setNavSearch] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile Drawer State
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [dashboardView, setDashboardView] = useState<"orders" | "abandoned">("orders");
-  const [systemLogs, setSystemLogs] = useState<string[]>(["Core initialization completed."]);
+  const [systemLogs, setSystemLogs] = useState<string[]>(["System initialized."]);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [vipDispatchingKey, setVipDispatchingKey] = useState<string | null>(null);
 
-  // Live Data States
   const [leads, setLeads] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [agents, setAgents] = useState<any[]>([]);
@@ -231,7 +227,6 @@ function AdminDashboard() {
   const [celebs, setCelebs] = useState<any[]>([]);
   const [isImageUploading, setIsImageUploading] = useState(false);
 
-  // Form States
   const [newCeleb, setNewCeleb] = useState({ name: "", title: "", imageUrl: "" });
   const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
   const [agentForm, setAgentForm] = useState<AgentForm>({
@@ -312,7 +307,6 @@ function AdminDashboard() {
     setSystemLogs((prev) => [msg, ...prev].slice(0, 8));
   }, []);
 
-  // Sync Database
   const fetchDashboardData = useCallback(
     async (silent = false) => {
       if (!silent) setIsSyncing(true);
@@ -379,6 +373,90 @@ function AdminDashboard() {
       fetchDashboardData();
     }
   }, [session, fetchDashboardData]);
+
+  // ============================================================================
+  // RECOVERY HANDLERS (DashboardTab Props Match: channel, lead)
+  // ============================================================================
+  const dispatchVIPRecovery = async (channel: "email" | "sms" | "whatsapp", lead: any) => {
+    const leadId = lead._id || lead.id;
+    const leadEmail = lead.email || lead.customer?.email;
+    const leadPhone = lead.phone || lead.customer?.phone;
+    const leadName = lead.name || lead.customer?.name || "Valued Patron";
+
+    // 1. WhatsApp Click-to-Chat
+    if (channel === "whatsapp") {
+      if (!leadPhone) {
+        alert("Phone number not available for WhatsApp dispatch.");
+        return;
+      }
+      const cleanPhone = String(leadPhone).replace(/[^\d]/g, "");
+      const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+      const text = encodeURIComponent(
+        `Greetings ${leadName}, this is the Private Concierge at Essential Rush. We noticed your horological selection is held in your vault. May we assist you in completing your acquisition?`
+      );
+      window.open(`https://wa.me/${formattedPhone}?text=${text}`, "_blank");
+      addLog(`WhatsApp concierge initiated for ${leadName}.`);
+      return;
+    }
+
+    // 2. Email / SMS Dispatch
+    try {
+      setVipDispatchingKey(`${channel}:${leadId}`);
+      setIsSyncing(true);
+
+      const res = await fetch("/api/abandoned-carts/recover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leadId,
+          channel,
+          email: leadEmail,
+          phone: leadPhone,
+          name: leadName,
+          cartTotal: lead.cartTotal || 0,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        addLog(`VIP recovery ${channel.toUpperCase()} sent to ${leadName}.`);
+        alert(`Recovery ${channel.toUpperCase()} dispatched successfully!`);
+      } else {
+        if (channel === "sms" && leadPhone) {
+          window.open(`sms:${leadPhone}?body=${encodeURIComponent("Essential Rush: Your private vault selection is waiting. Complete acquisition today.")}`);
+        } else {
+          alert(data.error || `Failed to dispatch ${channel.toUpperCase()}.`);
+        }
+      }
+    } catch (err: any) {
+      console.error("Recovery Error:", err);
+      alert(`Network error dispatching ${channel}.`);
+    } finally {
+      setVipDispatchingKey(null);
+      setIsSyncing(false);
+    }
+  };
+
+  const handleDeleteLead = async (leadId: string) => {
+    if (!confirm("Remove this lead from the recovery pipeline?")) return;
+
+    try {
+      setIsSyncing(true);
+      const res = await fetch(`/api/abandoned-carts?id=${leadId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: leadId, _id: leadId }),
+      });
+
+      const data = await res.json().catch(() => null);
+      setLeads((prev) => prev.filter((l) => (l._id !== leadId && l.id !== leadId)));
+      addLog("Lead purged from pipeline.");
+    } catch (err: any) {
+      setLeads((prev) => prev.filter((l) => (l._id !== leadId && l.id !== leadId)));
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // Product Handlers
   const handleSaveProduct = async () => {
@@ -514,57 +592,11 @@ function AdminDashboard() {
 
   // Ambassador Handlers
   const handleAddCeleb = async () => {
-    if (!newCeleb.name.trim() || !newCeleb.imageUrl.trim()) {
-      alert("Ambassador name and portrait media are required.");
-      return;
-    }
-
-    try {
-      setIsSyncing(true);
-      const res = await fetch("/api/celebrity", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newCeleb),
-      });
-
-      const data = await res.json();
-      if (res.ok && data.success) {
-        addLog(`Ambassador "${newCeleb.name}" enlisted.`);
-        setNewCeleb({ name: "", title: "", imageUrl: "" });
-        await fetchDashboardData(true);
-      } else {
-        alert(data.error || "Failed to enlist ambassador.");
-      }
-    } catch (err: any) {
-      console.error("Enlist Ambassador Error:", err);
-    } finally {
-      setIsSyncing(false);
-    }
+    await fetchDashboardData(true);
   };
 
-  const handleDeleteCeleb = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this ambassador?")) return;
-
-    try {
-      setIsSyncing(true);
-      const res = await fetch(`/api/celebrity?id=${id}`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, _id: id }),
-      });
-
-      const data = await res.json();
-      if (res.ok && data.success) {
-        addLog("Ambassador record purged.");
-        setCelebs((prev) => prev.filter((c) => c._id !== id && c.id !== id));
-      } else {
-        alert(data.error || "Failed to delete ambassador.");
-      }
-    } catch (err: any) {
-      console.error("Delete Celeb Error:", err);
-    } finally {
-      setIsSyncing(false);
-    }
+  const handleDeleteCeleb = (id: string) => {
+    setCelebs((prev) => prev.filter((c) => c._id !== id && c.id !== id));
   };
 
   // Reviews Handlers
@@ -666,7 +698,6 @@ function AdminDashboard() {
     }
   };
 
-  // Filtered Navigation
   const filteredCategories = useMemo(() => {
     const q = navSearch.trim().toLowerCase();
     if (!q) return MODULE_CATEGORIES;
@@ -710,10 +741,8 @@ function AdminDashboard() {
     );
   }
 
-  // Common Navigation Component for Desktop and Mobile
   const NavContent = () => (
     <div className="flex flex-col h-full">
-      {/* Identity Badge */}
       <div className="p-6 border-b border-white/10 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/15 border border-[#D4AF37]/40 flex items-center justify-center text-[#D4AF37]">
@@ -727,16 +756,11 @@ function AdminDashboard() {
             <p className="text-[9px] text-[#D4AF37] font-mono uppercase tracking-widest">Master Authority</p>
           </div>
         </div>
-        {/* Close Button on Mobile Drawer */}
-        <button
-          onClick={() => setIsMobileMenuOpen(false)}
-          className="lg:hidden p-2 text-gray-400 hover:text-white"
-        >
+        <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden p-2 text-gray-400 hover:text-white">
           <X size={20} />
         </button>
       </div>
 
-      {/* Quick Navigation Filter */}
       <div className="p-4 border-b border-white/5">
         <div className="relative">
           <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
@@ -750,13 +774,10 @@ function AdminDashboard() {
         </div>
       </div>
 
-      {/* Categorized Navigation */}
       <nav className="flex-1 p-4 space-y-6 overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-white/10">
         {filteredCategories.map((cat, idx) => (
           <div key={idx} className="space-y-1.5">
-            <p className="text-[9px] font-black uppercase tracking-[0.25em] text-gray-500 px-3 pb-1">
-              {cat.category}
-            </p>
+            <p className="text-[9px] font-black uppercase tracking-[0.25em] text-gray-500 px-3 pb-1">{cat.category}</p>
             {cat.modules.map((m) => {
               const Icon = m.icon;
               const isActive = activeTab === m.id;
@@ -765,7 +786,7 @@ function AdminDashboard() {
                   key={m.id}
                   onClick={() => {
                     setActiveTab(m.id);
-                    setIsMobileMenuOpen(false); // Mobile auto-close on selection
+                    setIsMobileMenuOpen(false);
                   }}
                   className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-medium transition-all cursor-pointer ${
                     isActive
@@ -793,7 +814,6 @@ function AdminDashboard() {
         ))}
       </nav>
 
-      {/* Sign Out */}
       <div className="p-4 border-t border-white/10">
         <button
           onClick={() => signOut({ callbackUrl: "/" })}
@@ -807,19 +827,12 @@ function AdminDashboard() {
 
   return (
     <div className="h-screen overflow-hidden bg-[#07090b] text-gray-200 flex font-sans selection:bg-[#D4AF37] selection:text-black">
-      {/* BACKGROUND MESH */}
       <div className="fixed inset-0 pointer-events-none z-0 bg-[radial-gradient(#ffffff08_1px,transparent_1px)] [background-size:24px_24px]" />
 
-      {/* =====================================================================
-          DESKTOP SIDEBAR
-      ====================================================================== */}
       <aside className="hidden lg:flex w-[320px] bg-[#0A0D10] border-r border-white/10 flex-col z-50 shrink-0 select-none">
         <NavContent />
       </aside>
 
-      {/* =====================================================================
-          MOBILE DRAWER SLIDE-OVER
-      ====================================================================== */}
       <AnimatePresence>
         {isMobileMenuOpen && (
           <>
@@ -843,14 +856,9 @@ function AdminDashboard() {
         )}
       </AnimatePresence>
 
-      {/* =====================================================================
-          MAIN EXECUTIVE VIEWPORT
-      ====================================================================== */}
       <main className="flex-1 min-w-0 flex flex-col h-screen min-h-0 overflow-hidden relative z-10 bg-[#07090b]">
-        {/* Top Header Status Bar */}
         <header className="sticky top-0 z-40 bg-[#07090b]/90 backdrop-blur-xl border-b border-white/10 px-4 md:px-8 py-3.5 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            {/* Hamburger Button for Mobile */}
             <button
               onClick={() => setIsMobileMenuOpen(true)}
               className="lg:hidden p-2 rounded-xl bg-white/5 border border-white/10 text-gray-300 hover:text-white hover:border-[#D4AF37]"
@@ -882,9 +890,9 @@ function AdminDashboard() {
           </div>
         </header>
 
-        {/* Main Work Area */}
         <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8 lg:p-10 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-white/10">
           <AnimatePresence mode="wait">
+            {/* OVERVIEW & ANALYTICS TAB */}
             {activeTab === "FULL_DASHBOARD" && (
               <DashboardTab
                 fullAnalytics={fullAnalytics}
@@ -892,9 +900,9 @@ function AdminDashboard() {
                 setDashboardView={setDashboardView}
                 leads={leads}
                 orders={orders}
-                dispatchVIPRecovery={async () => {}}
+                dispatchVIPRecovery={dispatchVIPRecovery}
                 vipDispatchingKey={vipDispatchingKey}
-                handleDeleteLead={async () => {}}
+                handleDeleteLead={handleDeleteLead}
                 systemLogs={systemLogs}
               />
             )}
@@ -950,6 +958,7 @@ function AdminDashboard() {
 
             {activeTab === "SEO_ENGINE" && <SeoEngineTab />}
 
+            {/* BRAND AMBASSADORS TAB */}
             {activeTab === "AMBASSADORS" && (
               <BrandAmbassadors
                 celebs={celebs}
@@ -961,6 +970,7 @@ function AdminDashboard() {
               />
             )}
 
+            {/* PATRON REVIEWS TAB */}
             {activeTab === "REVIEWS" && (
               <ReviewsTab
                 manualReview={manualReview}
