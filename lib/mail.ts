@@ -1,34 +1,42 @@
 // lib/mail.ts
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
-// ─── Transporter (reusable) ───────────────────────────────────────────────────
-const createTransporter = () =>
-  nodemailer.createTransport({
-    host:   process.env.SMTP_HOST || 'smtp.gmail.com',
-    port:   Number(process.env.SMTP_PORT) || 587,
-    secure: false,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
+// ─── Resend Client Initialization ─────────────────────────────────────────────
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-const FROM = `"Essential Rush" <${process.env.SMTP_USER}>`;
-const APP_URL = process.env.NEXTAUTH_URL || 'https://essentialrush.com';
+// Domain verify hone tak onboarding@resend.dev use karein, verify hone ke baad custom email lagayein
+const FROM = process.env.RESEND_FROM_EMAIL || 'Essential Rush <onboarding@resend.dev>';
+const APP_URL = process.env.NEXTAUTH_URL || 'https://essentialrus.vercel.app';
 
 // ─── 1. Generic sendEmail ─────────────────────────────────────────────────────
-// Used by: forgot-password/route.ts, orders/cancel/route.ts
+// Used by: forgot-password/route.ts, orders/cancel/route.ts, etc.
 export async function sendEmail(
   to: string,
   subject: string,
   html: string
 ): Promise<void> {
-  const transporter = createTransporter();
-  await transporter.sendMail({ from: FROM, to, subject, html });
+  try {
+    const { data, error } = await resend.emails.send({
+      from: FROM,
+      to,
+      subject,
+      html,
+    });
+
+    if (error) {
+      console.error('❌ Resend email sending failed:', error);
+      throw new Error(error.message);
+    }
+
+    console.log('✅ Email successfully dispatched via Resend:', data?.id);
+  } catch (err) {
+    console.error('❌ Unexpected error in sendEmail:', err);
+    throw err;
+  }
 }
 
 // ─── 2. sendOrderConfirmationEmail ───────────────────────────────────────────
-// Used by: webhook/razorpay/route.ts
+// Used by: webhook/cashfree/route.ts, webhook/razorpay/route.ts
 interface OrderItem {
   name?: string;
   qty?: number;
@@ -95,7 +103,7 @@ export async function sendOrderConfirmationEmail(
           ${itemsHtml}
           ${formattedAmount ? `<p>Order Total: <strong>${formattedAmount}</strong></p>` : ''}
           <div style="text-align:center;margin:30px 0;">
-            <a href="${APP_URL}/orders" style="background:#111;color:#fff;text-decoration:none;padding:14px 32px;border-radius:6px;font-size:16px;font-weight:bold;">
+            <a href="${APP_URL}/account" style="background:#111;color:#fff;text-decoration:none;padding:14px 32px;border-radius:6px;font-size:16px;font-weight:bold;">
               View My Orders
             </a>
           </div>
